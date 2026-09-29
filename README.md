@@ -16,8 +16,8 @@ An autonomous, probabilistic, risk-controlled trading **research and paper-tradi
 | Phase | Name | Status |
 |---|---|---|
 | 0 | Setup | ✅ done |
-| 1 | Market data + database | 🔄 finishing (1-hour live run + review pending) |
-| 2 | Backtesting framework | ⬜ |
+| 1 | Market data + database | ✅ done |
+| 2 | Backtesting framework | ⏳ next |
 | 3 | Strategy engine | ⬜ |
 | 4 | Risk engine | ⬜ |
 | 5 | Probability / EV engine | ⬜ |

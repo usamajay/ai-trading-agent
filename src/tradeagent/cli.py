@@ -257,12 +257,11 @@ def data_watch(
     """Append each newly closed bar (polling), validate and log it. Stop with Ctrl+C."""
     from datetime import timedelta
 
-    from loguru import logger
-
     from tradeagent.config import load_config, project_path
     from tradeagent.data.live import LiveUpdater, run_watch
     from tradeagent.data.mt5_client import MT5Client, MT5Credentials, MT5Error
     from tradeagent.data.store import BarStore, connect_db
+    from tradeagent.logs import add_daily_log
     from tradeagent.provenance import git_commit, new_run_id
 
     cfg = load_config()
@@ -273,12 +272,7 @@ def data_watch(
         raise typer.Exit(code=2)
 
     log_dir = project_path(cfg.settings.storage.bars_dir).parent / "logs"
-    logger.add(
-        log_dir / "watch_{time:YYYY-MM-DD!UTC}.log",
-        format="{time:YYYY-MM-DD HH:mm:ss.SSS!UTC} UTC | {level: <7} | {message}",  # stored: UTC
-        rotation="00:00",
-        retention="30 days",
-    )
+    add_daily_log(log_dir, "watch")
     run_id = new_run_id()
     conn = connect_db(project_path(cfg.settings.storage.sqlite_path))
     updater = LiveUpdater(

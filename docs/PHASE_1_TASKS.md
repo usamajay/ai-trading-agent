@@ -51,5 +51,7 @@
 ## Progress (2026-09-29)
 - ✅ Tasks 1.1–1.7 built, tested and pushed (see `git log`, `docs/DECISIONS.md`).
 - ✅ 3 years of M5–D1 (and 6 months of M1) on disk for both symbols; validation report reviewed and approved by Usama.
-- ⏳ Live updater 1-hour run without errors (`uv run tradeagent data watch --minutes 60`).
+- ✅ Live updater 1-hour run (2026-09-29 18:46–19:46 UTC): 356 polls, 150 new bars, 0 data issues, 0 MT5 errors, 0 reconnects; confirmed in the log file.
+
+**Phase 1 is done (2026-09-30).**
 - ✅ Usama explained where the data lives and how to refresh it (2026-09-30).
