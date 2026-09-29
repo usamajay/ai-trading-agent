@@ -35,4 +35,5 @@ uv sync                      # install dependencies
 uv run pytest                # run tests
 uv run ruff check .          # lint
 uv run tradeagent --help     # CLI
+uv run tradeagent check-config  # validate config/*.yaml, print config_hash
 ```
