@@ -48,8 +48,9 @@ Plan approved by Usama on 2026-09-30, with the additions marked **(added)**.
 - `Signal`: symbol, direction, stop_loss, take_profit, optional `max_hold_bars`, `why` text, and **(added)** an order type:
   - `market`: fill at the next bar's open;
   - `limit` (buy below / sell above the current price) and `stop` (buy above / sell below) with an `entry_price` and an **expiry** (`expiry_bars`); an unfilled order is cancelled at expiry, at the Friday cut-off for scalp/intraday, and when an excluded window starts.
-- `MarketContext`: `now` + read-only bars that **physically contain only closed bars up to t** (numpy views, so no copying on every bar). Asking for a bar after `now` raises an error.
-- `features/indicators.py`: only **ATR** for now (the baseline needs it for stop distance); the other indicators come in Phase 3. Tested against a hand-calculated example.
+- `MarketContext`: `now` + **read-only views of closed bars only** (a bar is visible once its end time ≤ `now`, on every timeframe; numpy views, so no copying on every bar). Asking for a bar past the latest closed one raises an error. Python cannot make the future physically unreachable (a determined strategy could dig into the underlying array), so the truncation test in 2.6 is the real guard.
+- `features/indicators.py`: only **ATR** for now (built early, in 2.1); the other indicators come in Phase 3.
+- **(added in build)** `timeframes[0]` is the decision timeframe the engine steps through; the others are context. An optional `prepare(frames)` hook adds indicator columns once per run instead of on every bar (values at bar t must use bars ≤ t; checked by the 2.6 truncation test). Timeframes and regimes are declared as tuples.
 - ✅ Check: tests pass; a strategy missing `why`, with > 5 params, or a limit/stop order without entry price or expiry is rejected.
 
 ### 2.4 Cost model (`backtest/costs.py`)
@@ -114,6 +115,8 @@ Plan approved by Usama on 2026-09-30, with the additions marked **(added)**.
 - ✅ 2.1 (2026-09-30): `data/market_hours.py` (shared with validation), `data/resample.py`, ATR in `features/indicators.py` (moved forward from 2.3), `tradeagent data resample-check`. Real data: NY-close D1 bars per weekday Mon 155 / Tue 157 / Wed 154 / Thu 154 / Fri 153 / Sun 0; median D1 ATR(14) XAUUSD 42.0 (broker with stubs 37.2, without 41.3), USOIL 2.11 (1.81 / 2.07). Partial days are US holidays, the 2024-12-09 late open, the 2025-06-19 hole, the 2025-11-28 outage and the data edges.
 
 - ✅ 2.2 (2026-09-30): split dates **approved by Usama and frozen** in `config/splits.yaml`. `config/data_exclusions.yaml` (approved decisions), `backtest/splits.py` (whole-week proposal with 2-week embargo gaps, freeze-once, OOS lock), `backtest/dataset.py` (per-bar flags), `find_gaps()` shared with validation, `tradeagent backtest splits`. Frozen (UTC, [start, end), Sundays): train 2023-10-01 → 2025-06-29 (91 wk), embargo → 2025-07-13, validation → 2026-02-08 (30 wk), embargo → 2026-02-22, out-of-sample → 2026-09-27 (31 wk); later bars are forward data.
+
+- ✅ 2.3 (2026-09-30): `strategies/base.py`: `Signal` (market/limit/stop with expiry, geometry and `why` checks, `entry_side_error` for pending orders), `ParamSpec` + `check_strategy` (≤ 5 params in range, known timeframes, valid style), `Frames`/`MarketContext`/`BarView` (closed bars only, read-only), `Strategy` protocol + `BaseStrategy`. 38 tests.
 
 ## Still open
 - Spread safety margin value: measured in task 2.4, approved by Usama.

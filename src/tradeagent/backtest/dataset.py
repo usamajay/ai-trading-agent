@@ -20,7 +20,6 @@ excluded by default.
 """
 
 from dataclasses import dataclass
-from typing import Literal
 
 import pandas as pd
 
@@ -31,8 +30,7 @@ from tradeagent.data.mt5_client import TIMEFRAMES
 from tradeagent.data.resample import resample_ny_close
 from tradeagent.data.store import BarStore
 from tradeagent.data.validation import find_gaps
-
-Style = Literal["scalp", "intraday", "swing"]
+from tradeagent.strategies.base import Style
 
 # A gap at least this long is a "reopen" (weekly open, daily break, holiday, hole):
 # spreads are wide for the first minutes after it.
