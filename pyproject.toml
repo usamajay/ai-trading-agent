@@ -32,6 +32,10 @@ packages = ["src/tradeagent"]
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.format]
+# Never let the formatter rewrite code samples inside docs (e.g. SPEC.md).
+exclude = ["*.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
