@@ -152,6 +152,95 @@ def data_summary() -> None:
         )
 
 
+@data_app.command("validate")
+def data_validate(
+    symbol: Annotated[
+        list[str] | None,
+        typer.Option("--symbol", "-s", help="Internal symbol, e.g. XAUUSD (default: all)."),
+    ] = None,
+    timeframe: Annotated[
+        list[str] | None,
+        typer.Option("--timeframe", "-t", help="e.g. M5 (default: all in settings)."),
+    ] = None,
+    examples: Annotated[
+        int, typer.Option("--examples", "-n", help="Worst examples to show per issue type.")
+    ] = 3,
+    save: Annotated[
+        bool, typer.Option("--save/--no-save", help="Write issues to data_quality_log.")
+    ] = True,
+) -> None:
+    """Check stored bars for gaps, spikes, duplicates, bad prices and spread outliers."""
+    from tradeagent.config import load_config, project_path
+    from tradeagent.data.store import BarStore, connect_db
+    from tradeagent.data.validation import ISSUE_TYPES, log_issues, validate_bars
+    from tradeagent.provenance import git_commit, new_run_id
+    from tradeagent.timeutil import fmt_utc_pkt
+
+    cfg = load_config()
+    store = BarStore(project_path(cfg.settings.storage.bars_dir))
+    run_id, commit = new_run_id(), git_commit()
+    short = {
+        "duplicate": "dup",
+        "not_monotonic": "order",
+        "ohlc_invalid": "ohlc",
+        "misaligned": "align",
+        "weekend_bar": "wkndbar",
+        "gap_intraday": "gap!",
+        "gap_holiday": "holiday",
+        "spike": "spike",
+        "spread_zero": "spr=0",
+        "spread_outlier": "spr>10x",
+    }
+
+    results = []
+    conn = connect_db(project_path(cfg.settings.storage.sqlite_path)) if save else None
+    for name in symbol or list(cfg.settings.symbols):
+        for tf in timeframe or list(cfg.settings.timeframes):
+            bars = store.read(name, tf)
+            if bars.empty:
+                continue
+            result = validate_bars(bars, name, tf)
+            results.append(result)
+            if conn is not None:
+                log_issues(conn, result, run_id, commit, cfg.config_hash)
+    if conn is not None:
+        conn.close()
+
+    typer.echo(f"Validation run {run_id}  (commit {commit})")
+    typer.echo("\nISSUES (need review; '.' = none)")
+    typer.echo(
+        f"{'symbol':<7}{'tf':<5}{'bars':>9} " + "".join(f"{short[t]:>8}" for t in ISSUE_TYPES)
+    )
+    for r in results:
+        counts = r.counts()
+        typer.echo(
+            f"{r.symbol:<7}{r.timeframe:<5}{r.bars:>9,} "
+            + "".join(f"{counts[t] or '.':>8}" for t in ISSUE_TYPES)
+        )
+
+    typer.echo("\nEXPECTED market behaviour (counted, not logged)")
+    typer.echo(
+        f"{'symbol':<7}{'tf':<5}{'weekend gaps':>14}{'daily breaks':>14}{'Sunday stubs':>14}"
+    )
+    for r in results:
+        e = r.expected
+        typer.echo(
+            f"{r.symbol:<7}{r.timeframe:<5}{e['gap_weekend']:>14}"
+            f"{e['gap_daily_break']:>14}{e['sunday_stub']:>14}"
+        )
+
+    if examples > 0:
+        typer.echo(f"\nWORST EXAMPLES (up to {examples} per type)")
+        for r in results:
+            for issue_type, group in r.issues.groupby("issue_type"):
+                typer.echo(f"  {r.symbol} {r.timeframe} {issue_type} ({len(group)}):")
+                worst = group.nlargest(examples, "severity")
+                for time_utc, details in zip(worst["time_utc"], worst["details"], strict=True):
+                    typer.echo(f"      {fmt_utc_pkt(time_utc.to_pydatetime())}  {details}")
+    if save:
+        typer.echo(f"\nSaved to data_quality_log with run_id {run_id}")
+
+
 def _fmt_day(ts: object) -> str:
     return "-" if ts is None else f"{ts:%Y-%m-%d}"
 

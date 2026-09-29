@@ -39,4 +39,5 @@ uv run tradeagent check-config  # validate config/*.yaml, print config_hash
 uv run tradeagent data ping     # connect to MT5 (demo only), show account + last prices
 uv run tradeagent data fetch    # download missing bars (--symbol XAUUSD, --timeframe M5)
 uv run tradeagent data summary  # bar counts and date ranges on disk
+uv run tradeagent data validate # data quality report (saved to data_quality_log)
 ```

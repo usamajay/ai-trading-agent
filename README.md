@@ -10,6 +10,7 @@ An autonomous, probabilistic, risk-controlled trading **research and paper-tradi
 3. Current work: **[docs/PHASE_1_TASKS.md](docs/PHASE_1_TASKS.md)**
 4. Rules for Claude Code: **[CLAUDE.md](CLAUDE.md)**
 5. Decision log: **[docs/DECISIONS.md](docs/DECISIONS.md)**
+6. Market hours, gaps and candle quirks: **[docs/DATA_NOTES.md](docs/DATA_NOTES.md)**
 
 ## Status
 | Phase | Name | Status |

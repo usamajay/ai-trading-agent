@@ -2,6 +2,8 @@
 
 Newest first. Format: date — decision — why.
 
+- 2026-09-29 — Validation market-hours rules are written in **New York time** (open Sun 18:00, daily break 17:00–18:00, close Fri 17:00; measured from Exness data). Why: they then follow US daylight saving automatically. Normal weekend and daily-break gaps are only counted; holiday closures and unexpected gaps are logged to `data_quality_log`. Spikes are flagged, never deleted.
+- 2026-09-29 — Backtests (Phase 2) will build their own **New York-close D1/H4 bars from H1** instead of using Exness D1/H4, which contain a 1–2 hour Sunday stub candle (makes D1 ATR 10–13% too low and makes Monday's "previous day" the stub). Also: stop-losses fill at the bar open when price gaps through them; trades overlapping a data hole > 1 h are excluded. Details and numbers: `docs/DATA_NOTES.md`.
 - 2026-09-29 — History depth is limited by MT5's "Max bars in chart" (100,000 on this terminal): M5 only reaches back to ~May 2025 and M1 to ~June 2026, while M15–D1 have the full 3 years. Phase 1's "3 years of data" goal needs this terminal setting raised (or a Dukascopy import); `data fetch` back-fills older data automatically once available. Why record it: it changes what Phase 2 can backtest on M5.
 - 2026-09-29 — Bar folders use the internal symbol (`data/bars/XAUUSD/...`), not the broker symbol (`XAUUSDm`). Why: data stays valid if the broker or suffix changes.
 - 2026-09-29 — Added `m1_history_months: 6` to `settings.yaml` (M1 is kept for 6 months, per PHASE_1_TASKS) instead of hard-coding it.
