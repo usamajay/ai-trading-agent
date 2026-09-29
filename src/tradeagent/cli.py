@@ -7,6 +7,10 @@ import typer
 app = typer.Typer(help="AI Trading Agent (paper mode by default).", no_args_is_help=True)
 data_app = typer.Typer(help="Market data commands (read-only).", no_args_is_help=True)
 app.add_typer(data_app, name="data")
+backtest_app = typer.Typer(
+    help="Backtesting (research only; never places orders).", no_args_is_help=True
+)
+app.add_typer(backtest_app, name="backtest")
 
 
 @app.callback()
@@ -372,6 +376,141 @@ def data_resample_check(
                 typer.echo(f"    {row.trading_day}  {row.h1_bars:>2}/23 H1 bars")
             if len(partial) > examples:
                 typer.echo(f"    ... and {len(partial) - examples} more")
+
+
+@backtest_app.command("splits")
+def backtest_splits(
+    freeze: Annotated[
+        bool, typer.Option("--freeze", help="Save the proposed dates to config/splits.yaml.")
+    ] = False,
+    approved_by: Annotated[
+        str | None, typer.Option("--approved-by", help="Who approved the dates (with --freeze).")
+    ] = None,
+) -> None:
+    """Show the train / validation / out-of-sample dates and what backtests exclude."""
+    from tradeagent.backtest.dataset import exclusion_windows, flag_bars
+    from tradeagent.backtest.splits import (
+        SPLIT_NAMES,
+        SplitError,
+        freeze_splits,
+        label_times,
+        propose_splits,
+    )
+    from tradeagent.config import DEFAULT_CONFIG_DIR, SPLITS_FILE, load_config, project_path
+    from tradeagent.data.store import BarStore
+    from tradeagent.data.validation import find_gaps
+    from tradeagent.timeutil import utc_now
+
+    cfg = load_config()
+    bt = cfg.settings.backtest
+    store = BarStore(project_path(cfg.settings.storage.bars_dir))
+    source_tf = bt.exclusions_source_timeframe
+    ranges = [store.time_range(sym, source_tf) for sym in cfg.settings.symbols]
+    if any(r is None for r in ranges):
+        typer.secho(f"Missing {source_tf} bars; run `tradeagent data fetch` first.", fg="red")
+        raise typer.Exit(code=1)
+    first = max(r[0] for r in ranges if r is not None)
+    last = min(r[1] for r in ranges if r is not None)
+
+    if cfg.splits is not None:
+        periods = {name: cfg.splits.period(name) for name in SPLIT_NAMES}
+        typer.secho(
+            f"Split dates FROZEN (approved by {cfg.splits.approved_by} on "
+            f"{cfg.splits.approved_on}), config/{SPLITS_FILE}",
+            fg=typer.colors.GREEN,
+            bold=True,
+        )
+    else:
+        try:
+            periods = propose_splits(first, last, cfg.settings.data_splits, bt.embargo_weeks)
+        except SplitError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1) from exc
+        typer.secho(
+            "Split dates PROPOSED (not frozen; nothing can run on them yet)",
+            fg=typer.colors.YELLOW,
+            bold=True,
+        )
+    typer.echo(
+        f"  {source_tf} data on disk (both symbols): {first:%Y-%m-%d %H:%M} to "
+        f"{last:%Y-%m-%d %H:%M} UTC. Periods are [start, end), Sunday 00:00 UTC."
+    )
+    typer.echo("")
+
+    total_days = sum((p.end - p.start).days for p in periods.values())
+    for i, name in enumerate(SPLIT_NAMES):
+        p = periods[name]
+        days = (p.end - p.start).days
+        typer.echo(
+            f"  {name:<14} {p.start:%a %Y-%m-%d} -> {p.end:%a %Y-%m-%d}   "
+            f"{days // 7} weeks ({days / total_days:.0%})"
+        )
+        if i < len(SPLIT_NAMES) - 1:
+            nxt = periods[SPLIT_NAMES[i + 1]]
+            typer.echo(
+                f"  {'embargo':<14} {p.end:%a %Y-%m-%d} -> {nxt.start:%a %Y-%m-%d}   "
+                f"{(nxt.start - p.end).days // 7} weeks, never used"
+            )
+    oos_end = periods["out_of_sample"].end
+    typer.echo(f"  {'forward':<14} {oos_end:%a %Y-%m-%d} -> ...              for paper trading")
+    typer.echo("  out_of_sample is LOCKED in Phase 2 (opened once per candidate in Phase 7).")
+
+    typer.echo("")
+    typer.secho("Bars per split (XAUUSD):", bold=True)
+    for tf in cfg.settings.timeframes:
+        bars = store.read("XAUUSD", tf)
+        if bars.empty:
+            continue
+        counts = label_times(bars["time_utc"], periods).value_counts()
+        shares = "  ".join(f"{n} {int(counts.get(n, 0)):>7,}" for n in SPLIT_NAMES)
+        typer.echo(f"  {tf:<4} from {bars['time_utc'].min():%Y-%m-%d}   {shares}")
+
+    for sym in cfg.settings.symbols:
+        source = store.read(sym, source_tf)
+        windows = exclusion_windows(
+            find_gaps(source, source_tf), cfg.exclusions, sym, bt.max_hole_minutes
+        )
+        typer.echo("")
+        typer.secho(f"{sym}: excluded windows ({len(windows)})", bold=True)
+        labels = label_times(windows["start_utc"], periods)
+        for start, end, src, reason, label in zip(
+            windows["start_utc"],
+            windows["end_utc"],
+            windows["source"],
+            windows["reason"],
+            labels,
+            strict=True,
+        ):
+            typer.echo(
+                f"  [{label:<13}] {start:%Y-%m-%d %H:%M} -> {end:%Y-%m-%d %H:%M} UTC  "
+                f"{src}: {reason}"
+            )
+        flagged = flag_bars(
+            source, source_tf, sym, windows, cfg.exclusions, bt, flat_before_weekend=True
+        )
+        split_of = label_times(flagged["time_utc"], periods)
+        for name in SPLIT_NAMES:
+            part = flagged[split_of == name]
+            typer.echo(
+                f"  {name:<14} {len(part):>7,} {source_tf} bars: "
+                f"{int(part['excluded'].sum()):>3} excluded, "
+                f"{int(part['no_new_entries'].sum()):>6,} no-new-entry (scalp/intraday rules), "
+                f"{int(part['gap_before'].sum()):>4} with a gap before"
+            )
+
+    typer.echo("")
+    if freeze:
+        if cfg.splits is not None:
+            typer.secho("Already frozen; nothing changed.", fg=typer.colors.YELLOW)
+            return
+        if not approved_by:
+            typer.secho("--freeze needs --approved-by NAME", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1)
+        path = DEFAULT_CONFIG_DIR / SPLITS_FILE
+        freeze_splits(periods, approved_by, path, today=utc_now().date())
+        typer.secho(f"Saved {path}. Record the approval in docs/DECISIONS.md.", fg="green")
+    elif cfg.splits is None:
+        typer.echo("After approval: uv run tradeagent backtest splits --freeze --approved-by Usama")
 
 
 def _fmt_day(ts: object) -> str:

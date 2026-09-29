@@ -1,0 +1,24 @@
+# Reviewed data decisions used by backtests (docs/DATA_NOTES.md §5).
+# Each entry must match an approved entry in docs/DECISIONS.md (the `decision` date).
+# Times are UTC; windows are [start, end). Leave out `symbols` to apply to all symbols.
+#
+# Unexpected gaps (gap_intraday) longer than backtest.max_hole_minutes are excluded
+# automatically unless they fall inside a keep_gaps or no_trade_windows entry.
+
+excluded_windows:                # no signals whose lookback touches it, no trades open across it
+  - start: 2025-06-19T08:50:00Z
+    end: 2025-06-22T22:05:00Z
+    reason: "Data hole: Friday 2025-06-20 missing although the market traded"
+    decision: 2026-09-29
+
+no_trade_windows:                # no new entries; open trades managed normally (gap-through fills)
+  - start: 2025-11-27T23:00:00Z
+    end: 2025-11-28T19:45:00Z
+    reason: "CME outage (Black Friday): huge spreads, oil missing ~11 h"
+    decision: 2026-09-29
+
+keep_gaps:                       # unexpected gaps inside these count as a normal weekend gap
+  - start: 2024-12-06T21:00:00Z
+    end: 2024-12-09T03:00:00Z
+    reason: "Sunday open ~3.5 h late (2024-12-08)"
+    decision: 2026-09-29

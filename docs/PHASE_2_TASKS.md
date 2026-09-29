@@ -19,8 +19,9 @@ Plan approved by Usama on 2026-09-30, with the additions marked **(added)**.
 
 ## Fixed inputs (answers from Usama, 2026-09-30)
 - **Starting balance:** 10,000 USD for every backtest.
-- **Swap values** are read from MT5 (`swap_mode`, `swap_long`, `swap_short`, `swap_rollover3days`) and saved in the cost snapshot (task 2.4). Read on 2026-09-30 (demo account): XAUUSDm long −560 pts, short 0, triple swap Wednesday; USOILm long 0, short −186.2 pts, triple-swap day reported as `7` (not a valid weekday) → **provisionally Wednesday** until confirmed on the Exness website.
+- **Swap values** are read from MT5 (`swap_mode`, `swap_long`, `swap_short`, `swap_rollover3days`) and saved in the cost snapshot (task 2.4). Read on 2026-09-30 (demo account): XAUUSDm long −560 pts, short 0, triple swap Wednesday; USOILm long 0, short −186.2 pts, triple-swap day reported as `7` (not a valid weekday) → **provisionally Wednesday** until Usama confirms it in the MT5 Specification window. Dollar conversion re-checked 2026-09-30 three ways (tick_value × point ÷ tick_size, contract size × point, MT5 profit calculator): $0.10 per point per lot for XAUUSD (contract 100 oz), $1.00 for USOIL (contract 1,000 barrels), so −$56 and −$186.20 per lot per night. The USOIL value is ~76%/year of the position's value (gold ~4.8%), which looks unusually high: Usama checks "Swap short" in the MT5 Specification window. Swap rates change over time and we only have today's, so reports show swap as its own cost line.
 - **Split dates** are shown to Usama and approved before any backtest uses them (task 2.2).
+- **M1 is only in out-of-sample.** M1 starts 2026-03-29, after the out-of-sample start (2026-02-22), so train and validation have no M1 bars. Scalp research trains on **M5**; M1 is used only for fills (2.5), and live/paper M1 keeps accumulating.
 
 ## Tasks
 
@@ -112,7 +113,12 @@ Plan approved by Usama on 2026-09-30, with the additions marked **(added)**.
 ## Progress
 - ✅ 2.1 (2026-09-30): `data/market_hours.py` (shared with validation), `data/resample.py`, ATR in `features/indicators.py` (moved forward from 2.3), `tradeagent data resample-check`. Real data: NY-close D1 bars per weekday Mon 155 / Tue 157 / Wed 154 / Thu 154 / Fri 153 / Sun 0; median D1 ATR(14) XAUUSD 42.0 (broker with stubs 37.2, without 41.3), USOIL 2.11 (1.81 / 2.07). Partial days are US holidays, the 2024-12-09 late open, the 2025-06-19 hole, the 2025-11-28 outage and the data edges.
 
+- 🟡 2.2 (2026-09-30): built and tested; **waiting for Usama to approve the split dates** before freezing. `config/data_exclusions.yaml` (approved decisions), `backtest/splits.py` (whole-week proposal with 2-week embargo gaps, freeze-once, OOS lock), `backtest/dataset.py` (per-bar flags), `find_gaps()` shared with validation, `tradeagent backtest splits`. Proposed (UTC, [start, end), Sundays): train 2023-10-01 → 2025-06-29 (91 wk), embargo → 2025-07-13, validation → 2026-02-08 (30 wk), embargo → 2026-02-22, out-of-sample → 2026-09-27 (31 wk); later bars are forward data.
+
 ## Still open
 - USOIL triple-swap day: MT5 reports `7`; confirm on the Exness contract page (Wednesday used until then).
 - Spread safety margin value: measured in task 2.4, approved by Usama.
-- Split dates: shown in task 2.2, approved by Usama.
+- **Split dates (2.2):** proposed below, waiting for Usama's approval before `--freeze`.
+- **Lower-timeframe tie rule vs splits (2.5):** because M1 exists only in out-of-sample, "M1 where available" would resolve SL/TP ties more precisely (usually less pessimistically) in OOS than in train/validation, for the same strategy. Proposal: use the **same** tie source across all splits (M5 for strategies on M15 and above; SL-first for M5 strategies) and report M1 only as a side-by-side check. Usama decides before 2.5.
+- **Entries on D1/H4 bars (2.5):** every NY-close D1/H4 bar opens right after the daily break, so the "no entries in the first 15 minutes after a reopen" rule blocks every D1 open and the 17:00 H4 open. Proposal for 2.5: such entries fill 15 minutes later using the M5 open, instead of being skipped.
+- **USOIL unreviewed gaps (2.2):** 5 unexpected gaps > 1 h, all in train, excluded by default (listed by `tradeagent backtest splits`). Usama may review them; excluding is the safe default.

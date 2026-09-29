@@ -215,7 +215,22 @@ def _check_weekend_bars(df: pd.DataFrame, bar_length: pd.Timedelta) -> pd.DataFr
     return _rows("weekend_bar", df.loc[inside, "time_utc"], "bar while market is closed")
 
 
-def _check_gaps(df: pd.DataFrame, bar_length: pd.Timedelta) -> tuple[pd.DataFrame, dict[str, int]]:
+GAP_COLUMNS = ["start_utc", "end_utc", "kind", "minutes", "details"]
+
+
+def find_gaps(bars: pd.DataFrame, timeframe: str) -> pd.DataFrame:
+    """Every gap between consecutive bars, classified like `validate_bars` does.
+
+    One row per gap: start_utc (where the missing time begins, i.e. the end of the
+    last bar before it), end_utc (open time of the first bar after it), kind
+    (`weekend`, `daily_break`, `holiday` or `intraday`), minutes, details.
+    """
+    bar_length = pd.Timedelta(TIMEFRAMES[timeframe][1])
+    df = bars.drop_duplicates("time_utc", keep="last").sort_values("time_utc")
+    return _classify_gaps(df.reset_index(drop=True), bar_length)
+
+
+def _classify_gaps(df: pd.DataFrame, bar_length: pd.Timedelta) -> pd.DataFrame:
     """Find missing bars and sort them into weekend / daily break / holiday / intraday."""
     prev_end = df["time_utc"].shift() + bar_length
     next_start = df["time_utc"]
@@ -251,9 +266,11 @@ def _check_gaps(df: pd.DataFrame, bar_length: pd.Timedelta) -> tuple[pd.DataFram
         # show up on the finer timeframes.
         holiday = pd.Series(True, index=a.index)
     holiday &= ~weekend & ~daily_break
-    intraday = ~weekend & ~daily_break & ~holiday
 
-    minutes = length.dt.total_seconds() / 60
+    kind = pd.Series("intraday", index=a.index)
+    kind[holiday] = "holiday"
+    kind[daily_break] = "daily_break"
+    kind[weekend] = "weekend"
     details = (
         "no bars for "
         + _fmt_duration(length)
@@ -261,16 +278,29 @@ def _check_gaps(df: pd.DataFrame, bar_length: pd.Timedelta) -> tuple[pd.DataFram
         + a.dt.strftime("%a %Y-%m-%d %H:%M")
         + " New York time"
     )
-    issues = pd.concat(
-        [
-            _rows("gap_holiday", next_start[is_gap][holiday], details[holiday], minutes[holiday]),
-            _rows(
-                "gap_intraday", next_start[is_gap][intraday], details[intraday], minutes[intraday]
-            ),
-        ],
-        ignore_index=True,
-    )
-    return issues, {"gap_weekend": int(weekend.sum()), "gap_daily_break": int(daily_break.sum())}
+    return pd.DataFrame(
+        {
+            "start_utc": prev_end[is_gap].to_numpy(),
+            "end_utc": next_start[is_gap].to_numpy(),
+            "kind": kind.to_numpy(),
+            "minutes": (length.dt.total_seconds() / 60).to_numpy(),
+            "details": details.to_numpy(),
+        },
+        columns=GAP_COLUMNS,
+    ).astype({"start_utc": "datetime64[ns, UTC]", "end_utc": "datetime64[ns, UTC]"})
+
+
+def _check_gaps(df: pd.DataFrame, bar_length: pd.Timedelta) -> tuple[pd.DataFrame, dict[str, int]]:
+    gaps = _classify_gaps(df, bar_length)
+    logged = [
+        _rows(f"gap_{kind}", g["end_utc"], g["details"], g["minutes"])
+        for kind in ("holiday", "intraday")
+        if not (g := gaps[gaps["kind"] == kind]).empty
+    ]
+    issues = pd.concat(logged, ignore_index=True) if logged else pd.DataFrame(columns=ISSUE_COLUMNS)
+    counts = gaps["kind"].value_counts()
+    expected = {f"gap_{k}": int(counts.get(k, 0)) for k in ("weekend", "daily_break")}
+    return issues, expected
 
 
 def _fmt_duration(length: pd.Series) -> pd.Series:

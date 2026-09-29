@@ -8,14 +8,23 @@ result row can record exactly which settings produced it.
 
 import hashlib
 import json
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Literal, Self, TypeVar
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_DIR = PROJECT_ROOT / "config"
+SPLITS_FILE = "splits.yaml"
 
 Mode = Literal["research", "paper", "live"]
 Timeframe = Literal["M1", "M5", "M15", "H1", "H4", "D1"]
@@ -59,6 +68,19 @@ class DataSplits(_Strict):
         return self
 
 
+class BacktestSettings(_Strict):
+    embargo_weeks: int = Field(ge=0, le=12)
+    max_hole_minutes: int = Field(ge=1)
+    no_entry_minutes_after_open: int = Field(ge=0, le=240)
+    friday_cutoff_ny: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    exclusions_source_timeframe: Timeframe
+
+    @property
+    def friday_cutoff_minutes(self) -> int:
+        hours, minutes = self.friday_cutoff_ny.split(":")
+        return int(hours) * 60 + int(minutes)
+
+
 class Settings(_Strict):
     mode: Mode
     timezone_display: str
@@ -69,6 +91,7 @@ class Settings(_Strict):
     storage: StorageSettings
     entry_rules: EntryRules
     data_splits: DataSplits
+    backtest: BacktestSettings
 
 
 class RiskLimits(_Strict):
@@ -114,10 +137,89 @@ class LiveLock(_Strict):
         return self
 
 
+class TimeWindow(_Strict):
+    """A reviewed time window in UTC, [start, end). `symbols` None means all symbols."""
+
+    start: datetime
+    end: datetime
+    symbols: list[str] | None = None
+    reason: str = Field(min_length=1)
+    decision: date  # date of the docs/DECISIONS.md entry that approved it
+
+    @field_validator("start", "end")
+    @classmethod
+    def _utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            raise ValueError("times must include a timezone, e.g. 2025-06-19T08:50:00Z")
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def _ordered(self) -> Self:
+        if self.end <= self.start:
+            raise ValueError(f"window ends before it starts: {self.start} -> {self.end}")
+        return self
+
+    def applies_to(self, symbol: str) -> bool:
+        return self.symbols is None or symbol in self.symbols
+
+
+class DataExclusions(_Strict):
+    """config/data_exclusions.yaml: reviewed data decisions (docs/DATA_NOTES.md §5)."""
+
+    excluded_windows: list[TimeWindow]  # no signals or open trades across these
+    no_trade_windows: list[TimeWindow]  # no new entries; open trades managed normally
+    keep_gaps: list[TimeWindow]  # unexpected gaps inside these count as normal closures
+
+
+class SplitPeriod(_Strict):
+    """[start, end) in whole UTC days."""
+
+    start: date
+    end: date
+
+    @model_validator(mode="after")
+    def _ordered(self) -> Self:
+        if self.end <= self.start:
+            raise ValueError(f"period ends before it starts: {self.start} -> {self.end}")
+        return self
+
+
+SplitName = Literal["train", "validation", "out_of_sample"]
+
+
+class SplitDates(_Strict):
+    """config/splits.yaml: fixed, human-approved split dates (SPEC §7.2)."""
+
+    approved_by: str = Field(min_length=1)
+    approved_on: date
+    train: SplitPeriod
+    validation: SplitPeriod
+    out_of_sample: SplitPeriod
+
+    @model_validator(mode="after")
+    def _chronological(self) -> Self:
+        if not (
+            self.train.end <= self.validation.start
+            and self.validation.end <= self.out_of_sample.start
+        ):
+            raise ValueError("splits must be in order: train, validation, out_of_sample")
+        return self
+
+    def period(self, split: SplitName) -> SplitPeriod:
+        periods = {
+            "train": self.train,
+            "validation": self.validation,
+            "out_of_sample": self.out_of_sample,
+        }
+        return periods[split]
+
+
 class AppConfig(_Strict):
     settings: Settings
     risk: RiskLimits
     live: LiveLock
+    exclusions: DataExclusions
+    splits: SplitDates | None  # None until Usama approves the split dates
     config_hash: str
 
     @model_validator(mode="after")
@@ -125,6 +227,19 @@ class AppConfig(_Strict):
         # Only the first of the SPEC §9 live checks; the rest run at startup.
         if self.settings.mode == "live" and not self.live.enabled:
             raise ValueError("mode is 'live' but config/live.yaml has enabled: false")
+        return self
+
+    @model_validator(mode="after")
+    def _splits_have_embargo(self) -> Self:
+        if self.splits is None:
+            return self
+        embargo = self.settings.backtest.embargo_weeks * 7
+        gaps = [
+            (self.splits.validation.start - self.splits.train.end).days,
+            (self.splits.out_of_sample.start - self.splits.validation.end).days,
+        ]
+        if min(gaps) < embargo:
+            raise ValueError(f"splits need an embargo of at least {embargo} days, got {gaps}")
         return self
 
 
@@ -151,19 +266,34 @@ def _load_file(path: Path, model: type[M]) -> M:
 
 
 def load_config(config_dir: Path = DEFAULT_CONFIG_DIR) -> AppConfig:
-    """Load settings.yaml, risk.yaml and live.yaml; raise ConfigError if anything is wrong."""
+    """Load config/*.yaml; raise ConfigError if anything is wrong.
+
+    splits.yaml is optional: it only exists once Usama has approved the split dates.
+    """
     settings = _load_file(config_dir / "settings.yaml", Settings)
     risk = _load_file(config_dir / "risk.yaml", RiskLimits)
     live = _load_file(config_dir / "live.yaml", LiveLock)
+    exclusions = _load_file(config_dir / "data_exclusions.yaml", DataExclusions)
+    splits_path = config_dir / SPLITS_FILE
+    splits = _load_file(splits_path, SplitDates) if splits_path.is_file() else None
 
-    config_hash = compute_config_hash(
-        {
-            "settings": settings.model_dump(mode="json"),
-            "risk": risk.model_dump(mode="json"),
-            "live": live.model_dump(mode="json"),
-        }
-    )
+    parts: dict[str, Any] = {
+        "settings": settings.model_dump(mode="json"),
+        "risk": risk.model_dump(mode="json"),
+        "live": live.model_dump(mode="json"),
+        "exclusions": exclusions.model_dump(mode="json"),
+    }
+    if splits is not None:
+        parts["splits"] = splits.model_dump(mode="json")
+    config_hash = compute_config_hash(parts)
     try:
-        return AppConfig(settings=settings, risk=risk, live=live, config_hash=config_hash)
+        return AppConfig(
+            settings=settings,
+            risk=risk,
+            live=live,
+            exclusions=exclusions,
+            splits=splits,
+            config_hash=config_hash,
+        )
     except ValidationError as exc:
         raise ConfigError(f"Invalid config combination:\n{exc}") from exc

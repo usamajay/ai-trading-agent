@@ -13,7 +13,13 @@ entry_rules:
   min_ev_r: 0.15
   min_p_win_lower: 0.40
   min_sample_trades: 100
-data_splits:                     # fixed, chronological
+data_splits:                     # fixed, chronological; dates frozen in config/splits.yaml
   train: 0.60
   validation: 0.20
   out_of_sample: 0.20
+backtest:                        # backtest engine (docs/PHASE_2_TASKS.md)
+  embargo_weeks: 2               # unused gap between train / validation / out-of-sample
+  max_hole_minutes: 60           # unreviewed unexpected gaps longer than this are excluded
+  no_entry_minutes_after_open: 15  # no new entries right after any reopen (wide spreads)
+  friday_cutoff_ny: "16:30"      # scalp/intraday: flat, no new entries from here (New York)
+  exclusions_source_timeframe: M5  # finest timeframe with full history; holes found on it
