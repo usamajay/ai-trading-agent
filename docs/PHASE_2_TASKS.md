@@ -19,7 +19,7 @@ Plan approved by Usama on 2026-09-30, with the additions marked **(added)**.
 
 ## Fixed inputs (answers from Usama, 2026-09-30)
 - **Starting balance:** 10,000 USD for every backtest.
-- **Swap values** are read from MT5 (`swap_mode`, `swap_long`, `swap_short`, `swap_rollover3days`) and saved in the cost snapshot (task 2.4). Read on 2026-09-30 (demo account): XAUUSDm long −560 pts, short 0, triple swap Wednesday; USOILm long 0, short −186.2 pts, triple-swap day reported as `7` (not a valid weekday) → **provisionally Wednesday** until Usama confirms it in the MT5 Specification window. Dollar conversion re-checked 2026-09-30 three ways (tick_value × point ÷ tick_size, contract size × point, MT5 profit calculator): $0.10 per point per lot for XAUUSD (contract 100 oz), $1.00 for USOIL (contract 1,000 barrels), so −$56 and −$186.20 per lot per night. The USOIL value is ~76%/year of the position's value (gold ~4.8%), which looks unusually high: Usama checks "Swap short" in the MT5 Specification window. Swap rates change over time and we only have today's, so reports show swap as its own cost line.
+- **Swap values** are read from MT5 (`swap_mode`, `swap_long`, `swap_short`, `swap_rollover3days`) and saved in the cost snapshot (task 2.4). Read on 2026-09-30 (demo account): XAUUSDm long −560 pts, short 0, triple swap Wednesday; USOILm long 0, short −186.2 pts, **no triple-swap day** (confirmed by Usama in the MT5 Specification window on 2026-09-30: swap Mon–Fri all ×1; MT5's `swap_rollover3days = 7` means "none"). Dollar conversion re-checked 2026-09-30 three ways (tick_value × point ÷ tick_size, contract size × point, MT5 profit calculator): $0.10 per point per lot for XAUUSD (contract 100 oz), $1.00 for USOIL (contract 1,000 barrels), so −$56 and −$186.20 per lot per night. The USOIL value is high (~76%/year of the position's value vs ~4.8% for gold), but the Specification window shows the same −186.2, so it is used as-is. Swap rates change over time and we only have today's, so reports show swap as its own cost line.
 - **Split dates** are shown to Usama and approved before any backtest uses them (task 2.2).
 - **M1 is only in out-of-sample.** M1 starts 2026-03-29, after the out-of-sample start (2026-02-22), so train and validation have no M1 bars. Scalp research trains on **M5**; M1 is used only for fills (2.5), and live/paper M1 keeps accumulating.
 
@@ -60,9 +60,9 @@ Plan approved by Usama on 2026-09-30, with the additions marked **(added)**.
 - **(added) Spread safety margin.** An MT5 bar's `spread` is usually the **minimum** spread seen in that bar, so it understates the real cost. Spread used in the backtest = `bar spread × spread_margin_multiple + spread_margin_points` (both in `settings.yaml`). A new command `uv run tradeagent backtest spread-check` measures, from the last few weeks of tick data, how the average tick spread inside each bar compares with the bar's recorded spread, and proposes the default; Usama approves the value.
 - Slippage: 0.2 × the (margined) spread on market entries, stop entries and stop-loss exits; take-profits and limit entries fill at their price (no slippage, no improvement), except when a bar opens beyond them (see 2.5).
 - Commission: per-lot setting, **0 for the Exness Standard account** (its cost is inside the spread).
-- Swap (overnight fee): charged when a position is held through the 17:00 NY rollover, in points per lot from the snapshot; triple on the triple-swap day (USOIL provisionally Wednesday, see "Fixed inputs").
+- Swap (overnight fee): charged once for each 17:00 NY rollover a position is held through, in points per lot from the snapshot, and ×3 on the symbol's triple-swap day. `swap_rollover3days = 7` means **no** triple day. Values (confirmed in the MT5 Specification window, 2026-09-30): **XAUUSD** long −560, short 0, ×3 on Wednesday; **USOIL** long 0, short −186.2, Mon–Fri all ×1, no triple day.
 - A new command `uv run tradeagent backtest costs --snapshot` saves a **dated cost snapshot** from MT5 (point, tick value, contract size, lot min/step, swap mode/long/short/triple day) to `config/costs.yaml`, so backtests are repeatable and run without MT5 open. This adds read-only fields to `SymbolSpec` (no order functions).
-- Tests: long/short entry and exit prices including the margin, a short's SL triggering on ask but not on bid, a 3-night hold charges 3 swaps, a Wednesday-night hold charges triple.
+- Tests: long/short entry and exit prices including the margin, a short's SL triggering on ask but not on bid, a 3-night hold charges 3 swaps, a gold position held over Wednesday's rollover pays ×3, an oil short held over the weekend pays one swap (Friday) and never ×3, and `swap_rollover3days = 7` is read as "no triple day".
 
 ### 2.5 Event engine (`backtest/engine.py`)
 - Loop bar by bar. After bar *t* closes: (1) the strategy sees bars ≤ *t*; (2) a new market signal fills at **bar t+1's open, never at bar t's close** **(added: dedicated test)**; limit/stop orders become active from bar *t+1*.
@@ -102,7 +102,7 @@ Plan approved by Usama on 2026-09-30, with the additions marked **(added)**.
 
 ### 2.10 Wrap-up
 - README "How to run" updated with the `backtest` commands; CLAUDE.md useful-commands list updated.
-- `docs/DECISIONS.md` entries for every choice above that is not literally in SPEC (fixed split dates, exclusions file, spread margin, lower-timeframe tie rule, temporary risk basics, OOS lock, no news slippage yet, USOIL triple-swap day, backtest_runs table).
+- `docs/DECISIONS.md` entries for every choice above that is not literally in SPEC (fixed split dates, exclusions file, spread margin, lower-timeframe tie rule, temporary risk basics, OOS lock, no news slippage yet, swap values and triple-swap days, backtest_runs table).
 - All tests + ruff pass; commit and push.
 
 ## Phase 2 is done when
@@ -116,7 +116,6 @@ Plan approved by Usama on 2026-09-30, with the additions marked **(added)**.
 - 🟡 2.2 (2026-09-30): built and tested; **waiting for Usama to approve the split dates** before freezing. `config/data_exclusions.yaml` (approved decisions), `backtest/splits.py` (whole-week proposal with 2-week embargo gaps, freeze-once, OOS lock), `backtest/dataset.py` (per-bar flags), `find_gaps()` shared with validation, `tradeagent backtest splits`. Proposed (UTC, [start, end), Sundays): train 2023-10-01 → 2025-06-29 (91 wk), embargo → 2025-07-13, validation → 2026-02-08 (30 wk), embargo → 2026-02-22, out-of-sample → 2026-09-27 (31 wk); later bars are forward data.
 
 ## Still open
-- USOIL triple-swap day: MT5 reports `7`; confirm on the Exness contract page (Wednesday used until then).
 - Spread safety margin value: measured in task 2.4, approved by Usama.
 - **Split dates (2.2):** proposed below, waiting for Usama's approval before `--freeze`.
 - **Lower-timeframe tie rule vs splits (2.5):** because M1 exists only in out-of-sample, "M1 where available" would resolve SL/TP ties more precisely (usually less pessimistically) in OOS than in train/validation, for the same strategy. Proposal: use the **same** tie source across all splits (M5 for strategies on M15 and above; SL-first for M5 strategies) and report M1 only as a side-by-side check. Usama decides before 2.5.

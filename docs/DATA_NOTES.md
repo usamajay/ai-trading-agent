@@ -60,7 +60,7 @@ Oil gaps are relatively about twice as large as gold's.
 ## 4. Daily break (1 hour, Mon–Thu)
 
 - **Treat it like a mini-weekend.** The gap-through fill rule applies, and positions stay open across it.
-- **Swap** (the overnight fee) is charged at this rollover. MT5 says the triple-swap day is **Wednesday** for XAUUSDm (`swap_rollover3days = 3`). USOILm reports `7`, which is not a normal weekday value; check the Exness contract specs before building the swap cost model.
+- **Swap** (the overnight fee) is charged at this rollover. MT5 says the triple-swap day is **Wednesday** for XAUUSDm (`swap_rollover3days = 3`). USOILm reports `7`, which means **no triple-swap day**: the MT5 Specification window shows Mon–Fri all ×1 (confirmed 2026-09-30).
 - **Spreads are wider right after the break and after the weekly open.** Gold's first bar after the break has a median spread of 199 points vs 179 normally. Oil's first bar after the weekend has a median of 26 vs 19 (up to 163). Backtests must use each **bar's own spread**, not the median, and the risk engine's spread filter (≤ 2× median) will block many of these entries anyway.
 - **No new entries in the first 15 minutes after an open** (weekly or daily). This will be a config setting, to be confirmed by research in Phase 3.
 
