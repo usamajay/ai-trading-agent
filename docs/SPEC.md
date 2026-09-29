@@ -96,11 +96,14 @@ Observe results ─► Hypothesis Generator (LLM + stats) ─► Experiment Mana
 ```
 src/tradeagent/
   config.py              # loads config/*.yaml, validates with pydantic
+  timeutil.py            # UTC helpers, PKT display
+  provenance.py          # git_commit, run ids
   data/
     mt5_client.py        # connect (refuses REAL accounts), fetch bars/ticks, symbol info (Windows); no order functions
     historical.py        # bulk download + Dukascopy/CSV import
     validation.py        # gaps, duplicates, spikes, weekend bars, spread sanity
     store.py             # read/write bars to DB/Parquet
+    live.py              # live updater: append newly closed bars, validate, log
   features/
     indicators.py        # EMA, RSI, ATR, VWAP, MACD, Bollinger, ADX
     structure.py         # swing highs/lows, BOS, S/R zones, session H/L
@@ -160,7 +163,7 @@ src/tradeagent/
 | `bars` (Parquet) | symbol, timeframe, time_utc, open, high, low, close, tick_volume, spread |
 | `data_quality_log` | run_id, symbol, timeframe, issue_type, time_utc, details |
 | `regimes` | symbol, timeframe, time_utc, trend_state, vol_state, direction, detector_version |
-| `strategies` | strategy_id, name, version, params_json, code_hash, status (`research/candidate/validated/paper/approved/production/retired`) |
+| `strategies` | strategy_id, name, version, params_json, code_hash, status (`research/candidate/validated/oos_passed/paper/approved/production/retired`) |
 | `experiments` | experiment_id, hypothesis_id, strategy_id, dataset_split, date_range, git_commit, seed, metrics_json, verdict, created_at |
 | `hypotheses` | hypothesis_id, text, rationale, source (`llm`/`scan`/`human`), status, created_at |
 | `signals` | signal_id, time_utc, symbol, strategy_id, direction, entry, sl, tp, p_win, ev_r, regime_id |
@@ -178,6 +181,7 @@ Every row that comes from code stores **`git_commit`** and **`config_hash`** so 
 - OHLC sanity: `low ≤ open,close ≤ high`; bar range > 20× median ATR flagged as spike.
 - Spread recorded and sane (> 0, < 10× median).
 - All times stored in **UTC**; display converts to PKT (UTC+5).
+- Market-hours rules use **New York time** (open Sun 18:00, daily break 17:00–18:00, close Fri 17:00), measured from Exness data. Gaps are classed weekend / daily break (normal, counted) or holiday / intraday (logged). Validation flags, never edits data. Details: `docs/DATA_NOTES.md`.
 
 ---
 
@@ -271,6 +275,9 @@ Position size = `(equity × risk%) / (SL distance × value per point per lot)`, 
 - Event-driven, bar by bar. At bar *t* the strategy sees only bars ≤ *t−1* closed (enforced by the engine, and by a unit test that injects a future-peek and must fail).
 - Costs: real historical spread where available, else broker typical spread; commission; slippage model (default 0.2×spread normal, 3×spread in news windows); swap for overnight holds.
 - Intrabar ambiguity: if SL and TP both inside one bar, assume **SL hit first** (pessimistic), unless tick data is available.
+- Gaps (weekend, daily break, holiday, data hole): if a bar opens beyond the SL, fill at that bar's **open**; TP fills at the TP price. Trades record whether they were held over a weekend.
+- D1/H4 used by strategies are rebuilt from H1 on a **17:00 New York** day boundary (broker D1/H4 contain a Sunday stub candle).
+- Data exclusions (holes, no-trade windows) come from `data_quality_log` plus reviewed decisions in `docs/DECISIONS.md`; see `docs/DATA_NOTES.md` §5.
 
 ### 7.2 Data splits (fixed, recorded, never shuffled)
 

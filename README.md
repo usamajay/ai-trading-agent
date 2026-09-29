@@ -16,7 +16,7 @@ An autonomous, probabilistic, risk-controlled trading **research and paper-tradi
 | Phase | Name | Status |
 |---|---|---|
 | 0 | Setup | ✅ done |
-| 1 | Market data + database | ⏳ next |
+| 1 | Market data + database | 🔄 finishing (1-hour live run + review pending) |
 | 2 | Backtesting framework | ⬜ |
 | 3 | Strategy engine | ⬜ |
 | 4 | Risk engine | ⬜ |
@@ -28,7 +28,71 @@ An autonomous, probabilistic, risk-controlled trading **research and paper-tradi
 | 10 | Controlled live deployment | 🔒 |
 
 ## How to run
-_(Filled in during Phase 1.)_
+
+All commands are for **Windows PowerShell**, run from the project folder.
+
+### One-time setup
+1. Install the tools from **[docs/PHASE_0_SETUP.md](docs/PHASE_0_SETUP.md)** (Python, uv, Git, MetaTrader 5).
+2. In MetaTrader 5, log in to your Exness **demo** account.
+3. In MetaTrader 5: **Tools → Options → Charts → Max. bars in chart → Unlimited**, then restart MT5. Without this, MT5 only gives ~100,000 candles per timeframe.
+4. Get the code and install it:
+   ```powershell
+   git clone https://github.com/usamajay/ai-trading-agent.git
+   cd ai-trading-agent
+   uv sync
+   ```
+5. Create your secrets file and fill in your **demo** login (it is git-ignored and never uploaded):
+   ```powershell
+   Copy-Item .env.example .env
+   code .env
+   ```
+6. Check everything:
+   ```powershell
+   uv run tradeagent check-config   # settings are valid
+   uv run tradeagent data ping      # must say "Account type: DEMO"
+   ```
+
+### Everyday commands
+| Command | What it does |
+|---|---|
+| `uv run tradeagent data fetch` | Downloads missing candles for all symbols/timeframes (first run: all history; later: only what's new). Options: `--symbol XAUUSD`, `--timeframe M5` |
+| `uv run tradeagent data summary` | Shows how many candles are stored and their date range |
+| `uv run tradeagent data validate` | Checks the data (gaps, spikes, bad prices, spreads) and saves issues to the database. `--examples 5` shows more detail |
+| `uv run tradeagent data watch` | Keeps M1/M5 up to date live, every 10 s. Stop with **Ctrl+C**. `--minutes 60` stops by itself |
+| `uv run tradeagent data ping` | Shows the account type, balance and latest prices |
+| `uv run tradeagent --help` | Lists all commands |
+
+### Where the data lives
+All data is on your PC in `data/` (git-ignored, never uploaded):
+
+| Path | Contents |
+|---|---|
+| `data/bars/<SYMBOL>/<TIMEFRAME>/<YEAR>.parquet` | Price candles, UTC times. e.g. `data/bars/XAUUSD/M5/2025.parquet` |
+| `data/tradeagent.db` | SQLite database: data-quality log now; trades, experiments, etc. in later phases |
+| `data/logs/watch_YYYY-MM-DD.log` | Live updater logs (UTC), kept 30 days |
+
+Symbols use internal names (`XAUUSD`, `USOIL`); the broker names (`XAUUSDm`, `USOILm`) are mapped in `config/settings.yaml`. History depth is set there too (`history_years: 3`, `m1_history_months: 6`).
+
+### Refreshing the data
+- **Normal refresh:** `uv run tradeagent data fetch`, then `uv run tradeagent data validate`. Re-runs only download what is missing, so they take seconds.
+- **Stay current all day:** leave `uv run tradeagent data watch` running.
+- **Start over:** delete the `data/bars` folder, then run `data fetch` again (under a minute).
+
+### Checks before committing
+```powershell
+uv run pytest            # all tests
+uv run ruff check .      # lint
+uv run mypy src          # type check
+```
+
+### If something goes wrong
+| Message | Fix |
+|---|---|
+| `MT5 initialize failed` | Open MetaTrader 5 and log in; check `MT5_PATH` in `.env` |
+| `Refusing REAL account` | Working as designed. Log MT5 in to the **demo** account |
+| `Terminal is logged in to …, not MT5_LOGIN` | MT5 is on a different account than `.env`. Switch account or fix `.env` |
+| `Config problem: …` | A value in `config/*.yaml` is wrong; the message names it |
+| M5 history starts later than 3 years ago | Raise "Max bars in chart" (setup step 3), restart MT5, run `data fetch` |
 
 ## Disclaimer
 Research software. No guarantee of profit. Trading leveraged products can lose more than you expect.
