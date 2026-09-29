@@ -40,4 +40,5 @@ uv run tradeagent data ping     # connect to MT5 (demo only), show account + las
 uv run tradeagent data fetch    # download missing bars (--symbol XAUUSD, --timeframe M5)
 uv run tradeagent data summary  # bar counts and date ranges on disk
 uv run tradeagent data validate # data quality report (saved to data_quality_log)
+uv run tradeagent data watch    # live M1/M5 updater (Ctrl+C to stop; --minutes 60 for a timed run)
 ```

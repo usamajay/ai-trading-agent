@@ -2,6 +2,7 @@
 
 Newest first. Format: date — decision — why.
 
+- 2026-09-29 — Live updater (`tradeagent data watch`, `data/live.py`): polls every 10 s for M1/M5 by default. A bar counts as closed only 2 s after its close time (settle delay), so late ticks are not cut off. New bars are validated together with the last 2,500 stored bars kept in memory, so gap/spike rules have context, and only issues on the new bars are logged. MT5 errors trigger a reconnect with doubling backoff (10 s → max 5 min), and every reconnect re-checks the account is DEMO; a refused account stops the watcher and is never retried. Log files go to `data/logs/watch_YYYY-MM-DD.log` (git-ignored, UTC timestamps, kept 30 days); the console shows local time for display. Why: meets task 1.6 and keeps running unattended through short MT5 outages.
 - 2026-09-29 — **Data review approved by Usama** (Phase 1 validation report). Applies to both XAUUSD and USOIL, all timeframes. Why: completes the Phase 1 review of `tradeagent data validate` findings (details in `docs/DATA_NOTES.md` §5–6).
   1. **Skip 2025-06-20 (data hole).** Exness has no bars from 2025-06-19 08:50 UTC to 2025-06-22 22:05 UTC, although the market traded on Friday 20 June. Backtests exclude this window: no signals whose lookback includes it, and no trades open during it.
   2. **Keep the 2024-12-08 late Sunday open.** The market reopened at 2024-12-09 02:30 UTC instead of ~22:00 UTC (≈3.5 h late). Treat it as a normal weekend gap (stop-losses fill at the first open); do not exclude it.
