@@ -52,4 +52,4 @@
 - ✅ Tasks 1.1–1.7 built, tested and pushed (see `git log`, `docs/DECISIONS.md`).
 - ✅ 3 years of M5–D1 (and 6 months of M1) on disk for both symbols; validation report reviewed and approved by Usama.
 - ⏳ Live updater 1-hour run without errors (`uv run tradeagent data watch --minutes 60`).
-- ⏳ Usama explains in his own words where the data lives and how to refresh it.
+- ✅ Usama explained where the data lives and how to refresh it (2026-09-30).
