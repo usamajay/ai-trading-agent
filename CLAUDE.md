@@ -13,7 +13,7 @@ Usama is a beginner at building this kind of system. He knows basic programming 
 - Record every design decision or deviation in `docs/DECISIONS.md` (date, decision, why).
 
 ## Hard safety rules (never break, even if asked casually)
-1. **No real-money trading code paths are enabled** before Phase 10. Default mode is `paper`. Usama chose to connect his existing Exness MT5 account (MT5 reports it as a REAL account) for price data. Therefore the MT5 client is **read-only** in every mode except `live`: it must never call `order_send`/`order_check` or any function that opens, modifies or closes positions or orders. Paper trades are simulated in Python only.
+1. **No real-money trading code paths are enabled** before Phase 10. Default mode is `paper`. The system uses Usama's **Exness MT5 Standard DEMO account** for all testing (Phases 1–9). The MT5 client must check `account_info().trade_mode` on connect and **refuse to run if the account is REAL** unless live mode passes every SPEC §9 check. Order functions live only in `src/tradeagent/execution/`; demo orders are allowed only in Phase 8+ forward testing.
 2. The **risk engine** (`src/tradeagent/risk/`) is deterministic Python: no LLM calls, no ML. Execution must refuse any order without a risk-approval token.
 3. Never edit `config/risk.yaml` or `config/live.yaml` limits without Usama explicitly asking in this session; log the change in `docs/DECISIONS.md`.
 4. Never commit secrets. Credentials go in `.env` (git-ignored). Provide `.env.example` with placeholders. Assume the repo may be public — check every commit for keys, passwords and account numbers.

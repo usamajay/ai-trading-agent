@@ -1,6 +1,6 @@
 # Phase 0 — Set up your computer (beginner guide)
 
-Goal: by the end, you have the tools installed, MetaTrader 5 connected, and this project on your PC.
+Goal: by the end, you have the tools installed, your MT5 demo account ready, and this project on your PC.
 Time: about 1 hour. Do the steps in order. If any step shows red error text, copy it into Claude and ask.
 
 ---
@@ -59,10 +59,8 @@ git config --global user.name "Usama Jamil"
 git config --global user.email "usamaandcs@gmail.com"
 ```
 
-## Step 5 — MetaTrader 5 account
-Usama chose to use his existing Exness MT5 account. The system connects to it **read-only** (price data only, no orders). Have ready: **login number**, **password**, **server** — they go in a `.env` file in Phase 1 (never in code, never on GitHub).
-
-Optional, for zero chance of mistakes: open a separate demo account (MT5 → **File → Open an Account** → Exness → **Open a demo account**, Standard, 1:200).
+## Step 5 — MetaTrader 5 demo account
+Use the existing Exness **Standard Demo** MT5 account (confirmed "Demo" in the Exness app). Have ready: **login number**, **password**, **server** (in MT5: File → Login to Trade Account shows the server). They go in a `.env` file in Phase 1 — never in code, never on GitHub.
 
 ## Step 6 — Download the project to your PC
 ```powershell
@@ -83,4 +81,4 @@ claude
 Then type:
 > Read CLAUDE.md, docs/SPEC.md and docs/PHASE_1_TASKS.md. Explain Phase 1 to me in simple words, then start Task 1.1. Guide me step by step — I'm a beginner.
 
-✅ Phase 0 is done when: `git`, `gh`, `uv`, `claude` all show versions; you have your MT5 login details; and `uv run pytest` shows 3 passed.
+✅ Phase 0 is done when: `git`, `gh`, `uv`, `claude` all show versions; you have your demo login details; and `uv run pytest` shows 3 passed.
