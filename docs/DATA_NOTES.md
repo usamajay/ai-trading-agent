@@ -68,15 +68,15 @@ Oil gaps are relatively about twice as large as gold's.
 
 `tradeagent data validate` sorts gaps into **weekend** and **daily break** (normal, counted only), **holiday** (closure longer than normal; logged) and **unexpected** (`gap_intraday`; logged, needs review). Notable unexpected gaps, seen on several timeframes and on both symbols:
 
-| When (New York time) | What | Backtest handling |
+| When (New York time) | What | Backtest handling (approved 2026-09-29, see DECISIONS.md) |
 |---|---|---|
-| Thu 19 Jun 2025 04:50 → Sun 22 Jun | **Data hole**: Friday 20 Jun 2025 is missing (the market traded that day) | Exclude this window; see rule below |
-| Fri 6 Dec 2024 → Sun 8 Dec 21:30 | Sunday open ~3.5 h late | Treat as a weekend gap |
-| Fri 28 Nov 2025 | Real exchange outage (CME, Black Friday); huge spreads (gold 3352 pts = 21× normal) | Keep; spread filter blocks entries |
+| Thu 19 Jun 2025 04:50 → Sun 22 Jun | **Data hole**: Friday 20 Jun 2025 is missing (the market traded that day) | **Excluded**: 2025-06-19 08:50 → 2025-06-22 22:05 UTC |
+| Fri 6 Dec 2024 → Sun 8 Dec 21:30 | Sunday open ~3.5 h late | **Kept**, treated as a weekend gap |
+| Fri 28 Nov 2025 | Real exchange outage (CME, Black Friday); huge spreads (gold 3352 pts = 21× normal) | **No-trade window**: 2025-11-27 23:00 → 2025-11-28 19:45 UTC (no new entries) |
 | Several 5–55 min holes (e.g. 3 Jan 2025 06:50, 55 min) | Short broker feed outages; both symbols at the same time | Gap-through rule |
 
-**Rule for data holes:** a backtest must not treat bars on either side of a hole as consecutive. Phase 2 will read `data_quality_log`. Any trade whose holding period overlaps a `gap_intraday` longer than 1 hour is excluded. Signals whose lookback window contains such a hole are skipped. Both are reported in the backtest results.
+**Rule for data holes:** a backtest must not treat bars on either side of a hole as consecutive. Phase 2 will read `data_quality_log`. Any trade whose holding period overlaps a `gap_intraday` longer than 1 hour is excluded, and signals whose lookback window contains such a hole are skipped, **unless a reviewed decision in `DECISIONS.md` says otherwise** (like the 2024-12-08 late open). New, unreviewed gaps are excluded by default. Exclusions are reported in the backtest results.
 
 ## 6. Spikes
 
-Candles larger than 20× the normal ATR are **flagged, not deleted**. The biggest (gold 29 Jan 2026 15:00–15:30 UTC; oil 8–23 Mar 2026) appear at the same moment on M5, M15, H1, H4 and D1, which means they are real market moves, not bad ticks. A single bad tick usually shows on one timeframe only. They stay in the data because they are real risk. If a later check against a second data source (e.g. Dukascopy) shows a spike did not happen, we will record it in `DECISIONS.md` and mask it in the backtest, never by editing the Parquet files.
+Candles larger than 20× the normal ATR are **flagged, not deleted**. The biggest (gold 29 Jan 2026 15:00–15:30 UTC; oil 8–23 Mar 2026) appear at the same moment on M5, M15, H1, H4 and D1, which means they are real market moves, not bad ticks. A single bad tick usually shows on one timeframe only. They stay in the data because they are real risk (**approved 2026-09-29**). If a later check against a second data source (e.g. Dukascopy) shows a spike did not happen, we will record it in `DECISIONS.md` and mask it in the backtest, never by editing the Parquet files.
