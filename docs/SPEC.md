@@ -15,7 +15,7 @@ We are building a program that runs on its own, 24/7, and does the work of a car
 3. It **picks the strategy** that has historically done best in that kind of market.
 4. It **estimates the odds** of each possible trade and its expected value (average profit per trade after costs).
 5. A separate **risk engine** — which the AI cannot override — decides if the trade is allowed and how big it may be.
-6. It **places the trade on paper** (simulated), records everything, and later compares what it expected with what happened.
+6. It **places the trade on paper** (simulated or on a demo account), records everything, and later compares what it expected with what happened.
 7. A **research loop** proposes new ideas ("hypotheses"), tests them properly, throws out weak ones, and only suggests a change when the evidence is strong. **A human (Usama) approves every change to live logic.**
 
 Real money is **off** by design until Phase 10, and switching it on needs a manual config change **and** a code-level check that the promotion evidence exists.
@@ -28,7 +28,7 @@ Real money is **off** by design until Phase 10, and switching it on needs a manu
 |---|---|
 | Instruments | XAUUSD, USOIL (broker symbols e.g. `XAUUSDm`, `USOILm` on Exness) |
 | Broker / platform | Exness via MetaTrader 5 (Python `MetaTrader5` package, **Windows only**) |
-| Trading account for testing | Usama's existing Exness MT5 account (reports as REAL), used **read-only for data**. No orders are sent to any account until Phase 10 |
+| Trading account for testing | Usama's Exness MT5 **Standard Demo** account. The code refuses REAL accounts until Phase 10 |
 | Timeframes | M1, M5, M15, H1, H4, D1 stored; strategies declare which they use |
 | Styles supported | scalp, intraday, swing |
 | Mode flags | `research`, `paper`, `live` (live is locked, see §9) |
@@ -97,7 +97,7 @@ Observe results ─► Hypothesis Generator (LLM + stats) ─► Experiment Mana
 src/tradeagent/
   config.py              # loads config/*.yaml, validates with pydantic
   data/
-    mt5_client.py        # READ-ONLY: connect, fetch bars/ticks, symbol info (Windows)
+    mt5_client.py        # connect (refuses REAL accounts), fetch bars/ticks, symbol info (Windows); no order functions
     historical.py        # bulk download + Dukascopy/CSV import
     validation.py        # gaps, duplicates, spikes, weekend bars, spread sanity
     store.py             # read/write bars to DB/Parquet
@@ -122,8 +122,8 @@ src/tradeagent/
     sizing.py            # volatility-adjusted position size
     killswitch.py
   execution/
-    paper.py             # simulated fills with spread + slippage model
-    live_mt5.py          # the ONLY module allowed to send orders; locked until Phase 10
+    paper.py             # simulated fills, or demo-account orders in Phase 8 forward tests
+    live_mt5.py          # real-account orders; locked until Phase 10
   backtest/
     engine.py            # event-driven, bar-by-bar, no look-ahead
     costs.py             # spread, commission, slippage, swap
@@ -165,7 +165,7 @@ src/tradeagent/
 | `hypotheses` | hypothesis_id, text, rationale, source (`llm`/`scan`/`human`), status, created_at |
 | `signals` | signal_id, time_utc, symbol, strategy_id, direction, entry, sl, tp, p_win, ev_r, regime_id |
 | `decisions` | decision_id, signal_id, action (`taken`/`rejected`), reason_codes, risk_check_json, explanation_text |
-| `trades` | trade_id, decision_id, mode (`paper`/`live`), open_time, close_time, entry, exit, size, sl, tp, fees, slippage, pnl, r_multiple, exit_reason |
+| `trades` | trade_id, decision_id, mode (`paper`/`demo`/`live`), open_time, close_time, entry, exit, size, sl, tp, fees, slippage, pnl, r_multiple, exit_reason |
 | `lessons` | lesson_id, trade_id or experiment_id, text, evidence_json |
 | `approvals` | approval_id, strategy_id, from_status, to_status, approved_by, evidence_json, time |
 | `risk_events` | time, rule, value, limit, action (block/shutdown/kill) |
@@ -314,15 +314,15 @@ Win rate, profit factor, expectancy (R and $), average trade, Sharpe, Sortino, C
 | candidate → validated | Validation-set results hold |
 | validated → oos_passed | All §7.4 checks pass on OOS |
 | oos_passed → paper | Automatic |
-| paper → approved | ≥ 4 weeks and ≥ 50 paper trades; paper expectancy within the OOS 90% band; **human review** |
+| paper → approved | ≥ 4 weeks and ≥ 50 paper/demo trades; results within the OOS 90% band; **human review** |
 | approved → production | **Human approval** recorded in `approvals` with evidence link |
 
 ---
 
 ## 9. Execution modes and the live lock
 
-- `mode: paper` (default). Paper engine uses **live MT5 prices** from the connected account and simulates fills in Python. It **never sends orders** to MT5.
-- Only `execution/live_mt5.py` may contain order functions; a test fails if any other module references them.
+- `mode: paper` (default). Uses live prices from the **demo** account. Fills are simulated in Python, or (Phase 8 forward testing) sent as real orders to the **demo account only**. The code verifies `trade_mode` is DEMO before any order.
+- Order functions exist only in `execution/`; a test fails if any other module references them.
 - `mode: live` requires **all** of:
   1. `config/live.yaml` has `enabled: true` and `account_login` matching the connected account,
   2. the strategy is `production` in the registry with an `approvals` row,
@@ -382,7 +382,7 @@ Stored in `decisions.explanation_text` + structured fields:
 
 | Phase | Goal | "Done" means |
 |---|---|---|
-| 0 | Setup | Python, Git, VS Code, Claude Code, MT5 connected (read-only), repo on GitHub |
+| 0 | Setup | Python, Git, VS Code, Claude Code, MT5 demo account, repo on GitHub |
 | 1 | Market data + database | `tradeagent data fetch` downloads 3+ years M5–D1 for XAUUSD/USOIL; validation report; tests |
 | 2 | Backtesting framework | Event engine + costs + metrics; look-ahead test; baseline strategy report |
 | 3 | Strategy engine | 5 rule-based strategies + baseline, each with tests and a backtest report |
@@ -390,7 +390,7 @@ Stored in `decisions.explanation_text` + structured fields:
 | 5 | Probability/EV engine | p_win/EV per signal, calibration report |
 | 6 | Hypothesis generation | Claude API loop, experiment manager, split guard, lessons table |
 | 7 | Walk-forward + OOS | Full §7 pipeline + promotion ladder in registry |
-| 8 | Paper trading | 24/7 on live prices (simulated fills), journal, regime detector + meta-agent live |
+| 8 | Paper trading | 24/7 on the demo account (simulated + demo fills), journal, regime detector + meta-agent live |
 | 9 | Monitoring + self-improvement | Dashboard, alerts, degradation monitor, weekly review report |
 | 10 | Controlled live | Only after ≥ 3 months paper success + manual approval; start at minimum size |
 
