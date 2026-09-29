@@ -276,7 +276,7 @@ Position size = `(equity × risk%) / (SL distance × value per point per lot)`, 
 - Signals from closed bar *t* fill at bar *t+1*'s open (market) or later (limit/stop orders with expiry); never at bar *t*'s close.
 - Prices: bars are **bid**; longs enter at ask (bid + spread) and exit on bid; shorts enter at bid and their SL/TP trigger on ask.
 - Costs: real historical spread per bar plus a configurable safety margin (the MT5 bar spread is usually the bar's minimum), else broker typical spread; commission; slippage model (default 0.2×spread normal, 3×spread in news windows); swap for overnight holds.
-- Intrabar ambiguity: if SL and TP both inside one bar, check lower-timeframe bars inside it (M1 where stored, else M5); if still unresolved, assume **SL hit first** (pessimistic).
+- Intrabar ambiguity: if SL and TP both inside one bar, check the M5 bars inside it (strategies on M15 and above); if still unresolved, or the strategy runs on M5, assume **SL hit first** (pessimistic). The same method is used in every split; M1 (out-of-sample only) is reported as a side-by-side check, never used for the result.
 - Gaps (weekend, daily break, holiday, data hole): if a bar opens beyond the SL, fill at that bar's **open**; TP fills at the TP price. Trades record whether they were held over a weekend.
 - D1/H4 used by strategies are rebuilt from H1 on a **17:00 New York** day boundary (broker D1/H4 contain a Sunday stub candle).
 - Data exclusions (holes, no-trade windows) come from `data_quality_log` plus reviewed decisions in `docs/DECISIONS.md`; see `docs/DATA_NOTES.md` §5.
