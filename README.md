@@ -2,7 +2,7 @@
 
 An autonomous, probabilistic, risk-controlled trading **research and paper-trading** system for XAUUSD and USOIL on MetaTrader 5.
 
-> ⚠️ Real-money trading is disabled by design until Phase 10 and a recorded manual approval. Tests run on an MT5 **demo** account.
+> ⚠️ Real-money trading is disabled by design until Phase 10 and a recorded manual approval. The MT5 connection is **read-only** (price data only); paper trades are simulated and no orders are sent.
 
 ## Start here
 1. New to this? Follow **[docs/PHASE_0_SETUP.md](docs/PHASE_0_SETUP.md)**.

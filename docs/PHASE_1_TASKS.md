@@ -17,10 +17,11 @@
 - Tests: valid config loads; bad value (e.g. negative risk) raises an error.
 
 ### 1.3 MT5 client (`data/mt5_client.py`)
-- `connect()` using `.env`; **refuse to connect if the account is not a demo account** while `mode != live` (check `account_info().trade_mode`).
+- `connect()` using `.env`. Log the account type (`account_info().trade_mode`: demo/real) at every start. **The client is read-only**: it exposes only data functions; no order functions exist in this module. If the account is REAL, print a clear banner: "REAL ACCOUNT — READ-ONLY DATA MODE".
+- Test: a test fails if `mt5_client.py` (or any module outside `execution/live_mt5.py`) references `order_send`, `order_check`, `positions_*` close/modify or `Buy`/`Sell` helpers.
 - `get_bars(symbol, timeframe, start, end)` → pandas DataFrame in UTC.
 - `symbol_info(symbol)` → point value, lot step, min lot, typical spread.
-- ✅ Check: `uv run tradeagent data ping` shows account (demo), balance, and last XAUUSDm price.
+- ✅ Check: `uv run tradeagent data ping` shows account type (demo/real), balance, and last XAUUSDm price.
 
 ### 1.4 Historical download (`data/historical.py`) + storage (`data/store.py`)
 - Download `history_years` of M5, M15, H1, H4, D1 (and M1 for last 6 months) in chunks.
