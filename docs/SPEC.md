@@ -28,7 +28,7 @@ Real money is **off** by design until Phase 10, and switching it on needs a manu
 |---|---|
 | Instruments | XAUUSD, USOIL (broker symbols e.g. `XAUUSDm`, `USOILm` on Exness) |
 | Broker / platform | Exness via MetaTrader 5 (Python `MetaTrader5` package, **Windows only**) |
-| Trading account for testing | **Exness DEMO account** only. Never the real account until Phase 10 |
+| Trading account for testing | Usama's existing Exness MT5 account (reports as REAL), used **read-only for data**. No orders are sent to any account until Phase 10 |
 | Timeframes | M1, M5, M15, H1, H4, D1 stored; strategies declare which they use |
 | Styles supported | scalp, intraday, swing |
 | Mode flags | `research`, `paper`, `live` (live is locked, see §9) |
@@ -59,7 +59,7 @@ Market Data Service ──► Data Validation ──► Feature Engineering
                                                    ▼
                   ┌──────── RISK MANAGEMENT ENGINE (hard gate) ────────┐
                   │  deterministic Python, no AI, cannot be bypassed    │
-                  └──────────────────────────┬─────────────────────────┘
+                  └─────────────────────────┬─────────────────────────┘
                                              ▼
                         Execution Engine (paper | live-locked)
                                              │
@@ -97,7 +97,7 @@ Observe results ─► Hypothesis Generator (LLM + stats) ─► Experiment Mana
 src/tradeagent/
   config.py              # loads config/*.yaml, validates with pydantic
   data/
-    mt5_client.py        # connect, fetch bars/ticks, symbol info (Windows)
+    mt5_client.py        # READ-ONLY: connect, fetch bars/ticks, symbol info (Windows)
     historical.py        # bulk download + Dukascopy/CSV import
     validation.py        # gaps, duplicates, spikes, weekend bars, spread sanity
     store.py             # read/write bars to DB/Parquet
@@ -123,7 +123,7 @@ src/tradeagent/
     killswitch.py
   execution/
     paper.py             # simulated fills with spread + slippage model
-    live_mt5.py          # locked until Phase 10
+    live_mt5.py          # the ONLY module allowed to send orders; locked until Phase 10
   backtest/
     engine.py            # event-driven, bar-by-bar, no look-ahead
     costs.py             # spread, commission, slippage, swap
@@ -321,7 +321,8 @@ Win rate, profit factor, expectancy (R and $), average trade, Sharpe, Sortino, C
 
 ## 9. Execution modes and the live lock
 
-- `mode: paper` (default). Paper engine uses **live MT5 prices from the demo account** but never sends orders, or sends them to the demo account only.
+- `mode: paper` (default). Paper engine uses **live MT5 prices** from the connected account and simulates fills in Python. It **never sends orders** to MT5.
+- Only `execution/live_mt5.py` may contain order functions; a test fails if any other module references them.
 - `mode: live` requires **all** of:
   1. `config/live.yaml` has `enabled: true` and `account_login` matching the connected account,
   2. the strategy is `production` in the registry with an `approvals` row,
@@ -381,7 +382,7 @@ Stored in `decisions.explanation_text` + structured fields:
 
 | Phase | Goal | "Done" means |
 |---|---|---|
-| 0 | Setup | Python, Git, VS Code, Claude Code, MT5 demo account, repo on GitHub |
+| 0 | Setup | Python, Git, VS Code, Claude Code, MT5 connected (read-only), repo on GitHub |
 | 1 | Market data + database | `tradeagent data fetch` downloads 3+ years M5–D1 for XAUUSD/USOIL; validation report; tests |
 | 2 | Backtesting framework | Event engine + costs + metrics; look-ahead test; baseline strategy report |
 | 3 | Strategy engine | 5 rule-based strategies + baseline, each with tests and a backtest report |
@@ -389,7 +390,7 @@ Stored in `decisions.explanation_text` + structured fields:
 | 5 | Probability/EV engine | p_win/EV per signal, calibration report |
 | 6 | Hypothesis generation | Claude API loop, experiment manager, split guard, lessons table |
 | 7 | Walk-forward + OOS | Full §7 pipeline + promotion ladder in registry |
-| 8 | Paper trading | 24/7 on demo prices, journal, regime detector + meta-agent live |
+| 8 | Paper trading | 24/7 on live prices (simulated fills), journal, regime detector + meta-agent live |
 | 9 | Monitoring + self-improvement | Dashboard, alerts, degradation monitor, weekly review report |
 | 10 | Controlled live | Only after ≥ 3 months paper success + manual approval; start at minimum size |
 
