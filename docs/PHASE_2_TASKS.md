@@ -109,6 +109,9 @@ Plan approved by Usama on 2026-09-30, with the additions marked **(added)**.
 - Baseline report for both symbols reviewed with Usama, and the sanity check passes (random ≈ −costs).
 - Usama can explain in his own words: what 1R is, why stops can lose more than 1R over a weekend, and why the random baseline should lose money.
 
+## Progress
+- ✅ 2.1 (2026-09-30): `data/market_hours.py` (shared with validation), `data/resample.py`, ATR in `features/indicators.py` (moved forward from 2.3), `tradeagent data resample-check`. Real data: NY-close D1 bars per weekday Mon 155 / Tue 157 / Wed 154 / Thu 154 / Fri 153 / Sun 0; median D1 ATR(14) XAUUSD 42.0 (broker with stubs 37.2, without 41.3), USOIL 2.11 (1.81 / 2.07). Partial days are US holidays, the 2024-12-09 late open, the 2025-06-19 hole, the 2025-11-28 outage and the data edges.
+
 ## Still open
 - USOIL triple-swap day: MT5 reports `7`; confirm on the Exness contract page (Wednesday used until then).
 - Spread safety margin value: measured in task 2.4, approved by Usama.

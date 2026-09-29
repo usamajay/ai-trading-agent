@@ -41,4 +41,5 @@ uv run tradeagent data fetch    # download missing bars (--symbol XAUUSD, --time
 uv run tradeagent data summary  # bar counts and date ranges on disk
 uv run tradeagent data validate # data quality report (saved to data_quality_log)
 uv run tradeagent data watch    # live M1/M5 updater (Ctrl+C to stop; --minutes 60 for a timed run)
+uv run tradeagent data resample-check  # New York-close D1/H4 built from H1 vs broker bars
 ```

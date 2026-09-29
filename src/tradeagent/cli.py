@@ -307,6 +307,73 @@ def data_watch(
     )
 
 
+@data_app.command("resample-check")
+def data_resample_check(
+    symbol: Annotated[
+        list[str] | None,
+        typer.Option("--symbol", "-s", help="Internal symbol, e.g. XAUUSD (default: all)."),
+    ] = None,
+    examples: Annotated[
+        int, typer.Option("--examples", "-n", help="Partial days to list per symbol.")
+    ] = 10,
+) -> None:
+    """Build New York-close D1/H4 bars from H1 and compare them with the broker's bars."""
+    import pandas as pd
+
+    from tradeagent.config import load_config, project_path
+    from tradeagent.data.resample import resample_ny_close
+    from tradeagent.data.store import BarStore
+    from tradeagent.features.indicators import atr
+
+    cfg = load_config()
+    store = BarStore(project_path(cfg.settings.storage.bars_dir))
+    days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    for sym in symbol or list(cfg.settings.symbols):
+        h1 = store.read(sym, "H1")
+        if h1.empty:
+            typer.secho(f"{sym}: no H1 bars stored", fg=typer.colors.YELLOW)
+            continue
+        d1 = resample_ny_close(h1, "D1")
+        h4 = resample_ny_close(h1, "H4")
+        typer.secho(
+            f"\n{sym}: {len(h1):,} H1 bars, {h1['time_utc'].min():%Y-%m-%d} to "
+            f"{h1['time_utc'].max():%Y-%m-%d} (UTC)",
+            bold=True,
+        )
+
+        per_day = pd.to_datetime(d1["trading_day"]).dt.dayofweek.value_counts()
+        counts = "  ".join(f"{days[d]} {int(per_day.get(d, 0))}" for d in range(7))
+        typer.echo(f"  NY-close D1 bars per weekday: {counts}")
+        typer.echo(
+            f"  D1: {len(d1):,} bars, {int(d1['partial'].sum())} partial | "
+            f"H4: {len(h4):,} bars, {int(h4['partial'].sum())} partial, "
+            f"{int(h4.groupby('trading_day').size().eq(6).sum())} days with all 6 blocks"
+        )
+
+        for tf, ours in (("D1", d1), ("H4", h4)):
+            broker = store.read(sym, tf)
+            if broker.empty:
+                continue
+            stub = broker["time_utc"].dt.dayofweek == 6  # Sunday candles (00:00 UTC cut)
+            if tf == "H4":
+                # The Friday 20:00 UTC H4 bar is also partial (about 1 hour of trading).
+                stub |= (broker["time_utc"].dt.dayofweek == 4) & (broker["time_utc"].dt.hour == 20)
+            full = ours[~ours["partial"]].reset_index(drop=True)
+            typer.echo(
+                f"  {tf} ATR(14), median: NY-close {atr(full).median():.3f} | "
+                f"broker {atr(broker).median():.3f} (with {int(stub.sum())} stub bars) | "
+                f"broker without stubs {atr(broker[~stub].reset_index(drop=True)).median():.3f}"
+            )
+
+        partial = d1[d1["partial"]]
+        if len(partial) and examples > 0:
+            typer.echo("  Partial D1 days (holiday, early close, data hole or data edge):")
+            for row in partial.head(examples).itertuples():
+                typer.echo(f"    {row.trading_day}  {row.h1_bars:>2}/23 H1 bars")
+            if len(partial) > examples:
+                typer.echo(f"    ... and {len(partial) - examples} more")
+
+
 def _fmt_day(ts: object) -> str:
     return "-" if ts is None else f"{ts:%Y-%m-%d}"
 

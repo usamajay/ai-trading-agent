@@ -1,9 +1,8 @@
 """Bar validation (SPEC §3.3). Flags problems; never changes or deletes data.
 
-Market hours used to tell expected gaps from real ones were measured from Exness
-XAUUSDm/USOILm history (see docs/DATA_NOTES.md): both trade Sunday 18:00 to
-Friday 17:00 New York time, with a daily break 17:00-18:00 New York time.
-Using New York time makes the rules follow US daylight saving automatically.
+Market hours used to tell expected gaps from real ones live in
+`data/market_hours.py` (New York time, measured from Exness data; see
+docs/DATA_NOTES.md).
 """
 
 import sqlite3
@@ -12,22 +11,19 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from tradeagent.data.market_hours import (
+    EARLY_CLOSE_FROM_MIN,
+    EARLY_CLOSE_TO_MIN,
+    NEW_YORK,
+    WEEK_CLOSE_FROM,
+    WEEK_OPEN_BY,
+    WEEKEND_STRICT_FROM,
+    WEEKEND_STRICT_TO,
+    in_closure,
+    week_minutes,
+)
 from tradeagent.data.mt5_client import BAR_COLUMNS, TIMEFRAMES
 from tradeagent.timeutil import utc_now
-
-NEW_YORK = "America/New_York"
-
-# Closure windows in New York time, widened a little: some sessions close early
-# (USOIL often at 16:45) and the first bar after a reopen can come up to ~25 min late.
-CLOSE_FROM_MIN = 16 * 60 + 30  # 16:30
-OPEN_BY_MIN = 18 * 60 + 30  # 18:30
-EARLY_CLOSE_FROM_MIN = 12 * 60 + 45  # US-holiday early closes seen at 13:00-14:45
-EARLY_CLOSE_TO_MIN = 14 * 60 + 45
-WEEK_CLOSE_FROM = 4 * 1440 + CLOSE_FROM_MIN  # Friday 16:30, in minutes since Monday 00:00
-WEEK_OPEN_BY = 6 * 1440 + OPEN_BY_MIN  # Sunday 18:30
-# Exact weekend closure (no slack), for spotting bars that should not exist.
-WEEKEND_STRICT_FROM = 4 * 1440 + 17 * 60  # Friday 17:00
-WEEKEND_STRICT_TO = 6 * 1440 + 18 * 60  # Sunday 18:00
 
 # Logged to data_quality_log.
 ISSUE_TYPES = (
@@ -210,26 +206,10 @@ def _check_alignment(df: pd.DataFrame, timeframe: str, bar_length: pd.Timedelta)
     return _rows("misaligned", df.loc[bad, "time_utc"], f"not on a {timeframe} boundary")
 
 
-def _week_minutes(ny: pd.Series) -> pd.Series:
-    """Minutes since Monday 00:00 (New York time)."""
-    return ny.dt.dayofweek * 1440 + ny.dt.hour * 60 + ny.dt.minute
-
-
-def _in_closure(ny: pd.Series) -> pd.Series:
-    """True where a New York time falls in the weekend or a daily break window."""
-    week = _week_minutes(ny)
-    minute_of_day = ny.dt.hour * 60 + ny.dt.minute
-    weekend = (week >= WEEK_CLOSE_FROM) & (week <= WEEK_OPEN_BY)
-    daily = (
-        (ny.dt.dayofweek <= 3) & (minute_of_day >= CLOSE_FROM_MIN) & (minute_of_day <= OPEN_BY_MIN)
-    )
-    return weekend | daily
-
-
 def _check_weekend_bars(df: pd.DataFrame, bar_length: pd.Timedelta) -> pd.DataFrame:
     """Bars lying entirely inside the weekend closure (e.g. a Saturday bar)."""
-    start = _week_minutes(df["time_utc"].dt.tz_convert(NEW_YORK))
-    end = _week_minutes((df["time_utc"] + bar_length).dt.tz_convert(NEW_YORK))
+    start = week_minutes(df["time_utc"].dt.tz_convert(NEW_YORK))
+    end = week_minutes((df["time_utc"] + bar_length).dt.tz_convert(NEW_YORK))
     inside = (start >= WEEKEND_STRICT_FROM) & (end <= WEEKEND_STRICT_TO) & (end >= start)
     inside &= bar_length < pd.Timedelta(days=2)
     return _rows("weekend_bar", df.loc[inside, "time_utc"], "bar while market is closed")
@@ -244,14 +224,14 @@ def _check_gaps(df: pd.DataFrame, bar_length: pd.Timedelta) -> tuple[pd.DataFram
     b = next_start[is_gap].dt.tz_convert(NEW_YORK)  # and came back here
     length = b - a
 
-    a_week, b_week = _week_minutes(a), _week_minutes(b)
+    a_week, b_week = week_minutes(a), week_minutes(b)
     weekend = (
         (a_week >= WEEK_CLOSE_FROM)
         & (b_week <= WEEK_OPEN_BY)
         & (b_week >= a_week)
         & (length <= pd.Timedelta(days=2, hours=2))
     )
-    daily_break = ~weekend & _in_closure(a) & _in_closure(b) & (length <= pd.Timedelta(hours=2))
+    daily_break = ~weekend & in_closure(a) & in_closure(b) & (length <= pd.Timedelta(hours=2))
 
     # Trading stopped somewhere inside the last bar [a - bar_length, a]; it was an
     # early close if that bar overlaps the early-close window (H1 bars end at 15:00
@@ -264,7 +244,7 @@ def _check_gaps(df: pd.DataFrame, bar_length: pd.Timedelta) -> tuple[pd.DataFram
     if bar_length <= pd.Timedelta(hours=1):
         # Fine bars show exactly when trading stopped: a holiday closure starts at a
         # normal or early close and ends at a normal reopen.
-        holiday = (_in_closure(a) | early_close) & _in_closure(b)
+        holiday = (in_closure(a) | early_close) & in_closure(b)
     else:
         # H4/D1 bars are too coarse to see close times, and 4+ hours with no trade
         # at all only happens when the market is closed. Real data holes still
