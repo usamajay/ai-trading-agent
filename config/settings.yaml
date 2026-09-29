@@ -1,0 +1,18 @@
+mode: paper                      # research | paper | live (live is locked, see SPEC §9)
+timezone_display: Asia/Karachi
+symbols:
+  XAUUSD: XAUUSDm                # internal name: broker symbol (Exness)
+  USOIL: USOILm
+timeframes: [M1, M5, M15, H1, H4, D1]
+history_years: 3
+storage:
+  bars_dir: data/bars
+  sqlite_path: data/tradeagent.db
+entry_rules:
+  min_ev_r: 0.15
+  min_p_win_lower: 0.40
+  min_sample_trades: 100
+data_splits:                     # fixed, chronological
+  train: 0.60
+  validation: 0.20
+  out_of_sample: 0.20

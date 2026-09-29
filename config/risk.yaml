@@ -1,0 +1,16 @@
+# HARD RISK LIMITS — edited by a human only. See docs/SPEC.md §6.
+# Any change must be logged in docs/DECISIONS.md.
+risk_per_trade_pct: 0.5
+max_daily_loss_pct: 2.0
+max_weekly_loss_pct: 4.0
+max_drawdown_pct: 10.0          # full shutdown, manual restart
+max_open_positions: 1
+max_open_per_symbol: 1
+max_consecutive_losses: 4
+consecutive_loss_pause_hours: 24
+min_reward_risk: 2.0             # matches your manual trading rule (min 1:2)
+sl_atr_min: 0.5
+sl_atr_max: 3.0
+max_spread_multiple: 2.0         # vs median spread
+news_blackout_minutes: 30
+correlation_limit: 0.6           # gold/oil same-direction block
