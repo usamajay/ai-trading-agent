@@ -24,6 +24,7 @@ dev = [
     "ruff",
     "mypy",
     "types-pyyaml>=6.0.12.20260906",
+    "pandas-stubs>=3.0.5.260914",
 ]
 
 [build-system]
@@ -40,6 +41,10 @@ target-version = "py311"
 [tool.ruff.format]
 # Never let the formatter rewrite code samples inside docs (e.g. SPEC.md).
 exclude = ["*.md"]
+
+[[tool.mypy.overrides]]
+module = ["MetaTrader5"]  # ships without type information
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -2,6 +2,10 @@
 
 Newest first. Format: date — decision — why.
 
+- 2026-09-29 — MT5 client (`data/mt5_client.py`) allows **DEMO accounts only**: REAL is refused in every mode (including `live`) until the SPEC §9 checks are built in Phase 10; CONTEST/unknown account types are refused too. If `.env` has `MT5_LOGIN`, the connected login must match it. Why: the safest reading of CLAUDE.md rule 1 while live checks don't exist yet.
+- 2026-09-29 — Exness MT5 server time is UTC (checked: live tick time equalled the PC's UTC clock), so MT5 bar timestamps are stored as UTC without an offset. Re-check if the broker/server changes.
+- 2026-09-29 — Without an `MT5_LOGIN` in `.env`, the client attaches to the already-logged-in MT5 terminal (still demo-checked). Why: lets `data ping` work before `.env` is created; SPEC assumed `.env` only.
+- 2026-09-29 — `get_bars` drops the still-forming latest bar by default (`closed_only=True`), and bar times use `datetime64[ns, UTC]`. Why: SPEC §4 closed-bars-only rule; one time type for Parquet storage.
 - 2026-09-29 — Config loader (`config.py`) is strict and read-only: unknown keys are errors, loaded settings are frozen, and it adds sanity cross-checks beyond the spec (risk per trade ≤ daily ≤ weekly ≤ max drawdown; per-symbol ≤ total positions; `sl_atr_min < sl_atr_max`; data splits sum to 1; `mode: live` refused while `live.yaml` is disabled). `config_hash` = sha256 of the validated values as sorted JSON, so comments/key order don't change it. Why: catch typos at startup and make it impossible for running code to alter risk limits. No limit values were changed.
 - 2026-09-29 — Use Usama's existing Exness MT5 **Standard Demo** account for all testing (confirmed in the Exness app: Demo · MT5 · Standard). An external MT5 connector had mislabelled it as "real", so our own client must verify `trade_mode` itself on every connect and refuse REAL accounts outside live mode. Demo orders allowed from Phase 8 forward testing.
 - 2026-09-29 — Start with SQLite + Parquet, move to PostgreSQL/TimescaleDB in Phase 8 — zero setup for a beginner; storage is behind `store.py` so the switch is contained.
