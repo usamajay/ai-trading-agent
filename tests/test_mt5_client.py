@@ -206,6 +206,14 @@ def test_get_bars_empty_and_error() -> None:
             client.get_bars("NOPE", "H1", start, end)
 
 
+def test_get_bars_drops_stray_bars_outside_the_range() -> None:
+    # Real MT5 quirk: asking for dates before its history returns 1 later bar.
+    stray = make_rates(datetime(2026, 6, 18, tzinfo=UTC), 1, timedelta(minutes=1))
+    start, end = datetime(2023, 10, 1, tzinfo=UTC), datetime(2023, 10, 8, tzinfo=UTC)
+    with MT5Client(credentials=CREDS, mt5_module=FakeMT5(rates=stray)) as client:
+        assert client.get_bars("XAUUSDm", "M1", start, end).empty
+
+
 def test_calls_before_connect_fail() -> None:
     client = MT5Client(credentials=CREDS, mt5_module=FakeMT5())
     with pytest.raises(MT5Error, match="connect"):

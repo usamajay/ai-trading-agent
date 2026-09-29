@@ -4,7 +4,8 @@ symbols:
   XAUUSD: XAUUSDm                # internal name: broker symbol (Exness)
   USOIL: USOILm
 timeframes: [M1, M5, M15, H1, H4, D1]
-history_years: 3
+history_years: 3                 # M5..D1
+m1_history_months: 6             # M1 is large, keep only recent months
 storage:
   bars_dir: data/bars
   sqlite_path: data/tradeagent.db

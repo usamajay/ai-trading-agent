@@ -255,6 +255,9 @@ class MT5Client:
             )
         df["time_utc"] = pd.to_datetime(df["time"], unit="s", utc=True).astype(TIME_DTYPE)
         df = df[BAR_COLUMNS].astype({"tick_volume": "int64", "spread": "int64"})
+        # MT5 returns a stray bar from outside the range when asked for dates older
+        # than its history, so keep only what was asked for.
+        df = df[(df["time_utc"] >= start_utc) & (df["time_utc"] <= end_utc)]
         if closed_only:
             df = df[df["time_utc"] + bar_length <= utc_now()]
         return df.sort_values("time_utc").reset_index(drop=True)

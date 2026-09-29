@@ -22,6 +22,11 @@ Timeframe = Literal["M1", "M5", "M15", "H1", "H4", "D1"]
 M = TypeVar("M", bound=BaseModel)
 
 
+def project_path(path: Path) -> Path:
+    """Resolve a config path such as `data/bars` against the project root."""
+    return path if path.is_absolute() else PROJECT_ROOT / path
+
+
 class ConfigError(Exception):
     """Raised when a config file is missing or invalid."""
 
@@ -60,6 +65,7 @@ class Settings(_Strict):
     symbols: dict[str, str] = Field(min_length=1)  # internal name -> broker symbol
     timeframes: list[Timeframe] = Field(min_length=1)
     history_years: int = Field(ge=1, le=20)
+    m1_history_months: int = Field(ge=1, le=240)
     storage: StorageSettings
     entry_rules: EntryRules
     data_splits: DataSplits

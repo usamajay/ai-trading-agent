@@ -1,5 +1,7 @@
 """Command-line entry point. Commands are added phase by phase."""
 
+from typing import Annotated
+
 import typer
 
 app = typer.Typer(help="AI Trading Agent (paper mode by default).", no_args_is_help=True)
@@ -79,6 +81,79 @@ def data_ping() -> None:
     except MT5Error as exc:
         typer.secho(f"MT5 problem: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
+
+
+@data_app.command("fetch")
+def data_fetch(
+    symbol: Annotated[
+        list[str] | None,
+        typer.Option("--symbol", "-s", help="Internal symbol, e.g. XAUUSD (default: all)."),
+    ] = None,
+    timeframe: Annotated[
+        list[str] | None,
+        typer.Option("--timeframe", "-t", help="e.g. M5 (default: all in settings)."),
+    ] = None,
+) -> None:
+    """Download missing history from MT5 into data/bars (incremental)."""
+    from tradeagent.config import load_config, project_path
+    from tradeagent.data.historical import fetch_history, history_start
+    from tradeagent.data.mt5_client import MT5Client, MT5Credentials, MT5Error
+    from tradeagent.data.store import BarStore, connect_db
+    from tradeagent.timeutil import utc_now
+
+    cfg = load_config()
+    symbols = cfg.settings.symbols
+    wanted_symbols = symbol or list(symbols)
+    wanted_tfs = timeframe or list(cfg.settings.timeframes)
+    unknown = [s for s in wanted_symbols if s not in symbols] + [
+        t for t in wanted_tfs if t not in cfg.settings.timeframes
+    ]
+    if unknown:
+        typer.secho(f"Unknown symbol/timeframe: {unknown}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    connect_db(project_path(cfg.settings.storage.sqlite_path)).close()
+    store = BarStore(project_path(cfg.settings.storage.bars_dir))
+    try:
+        with MT5Client(mode=cfg.settings.mode, credentials=MT5Credentials.from_env()) as client:
+            now = utc_now()
+            for name in wanted_symbols:
+                for tf in wanted_tfs:
+                    start = history_start(tf, cfg.settings, now)
+                    r = fetch_history(client, store, name, symbols[name], tf, start, now)
+                    note = ""
+                    if r.first is not None and r.first > start + (now - start) * 0.02:
+                        note = "  (broker history starts later than wanted)"
+                    typer.echo(
+                        f"{name:<7} {tf:<4} +{r.new_bars:>7} new  "
+                        f"{_fmt_day(r.first)} -> {_fmt_day(r.last)}{note}"
+                    )
+    except MT5Error as exc:
+        typer.secho(f"MT5 problem: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@data_app.command("summary")
+def data_summary() -> None:
+    """Show stored bar counts and date ranges (UTC)."""
+    from tradeagent.config import load_config, project_path
+    from tradeagent.data.store import BarStore
+
+    cfg = load_config()
+    table = BarStore(project_path(cfg.settings.storage.bars_dir)).summary()
+    if table.empty:
+        typer.echo("No bars stored yet. Run: uv run tradeagent data fetch")
+        return
+    typer.echo(f"{'symbol':<7} {'tf':<4} {'bars':>9}  first (UTC)        last (UTC)")
+    for row in table.itertuples():
+        typer.echo(
+            f"{row.symbol:<7} {row.timeframe:<4} {row.bars:>9,}  "
+            f"{row.first_utc:%Y-%m-%d %H:%M}   {row.last_utc:%Y-%m-%d %H:%M}"
+        )
+
+
+def _fmt_day(ts: object) -> str:
+    return "-" if ts is None else f"{ts:%Y-%m-%d}"
 
 
 if __name__ == "__main__":

@@ -2,6 +2,11 @@
 
 Newest first. Format: date — decision — why.
 
+- 2026-09-29 — History depth is limited by MT5's "Max bars in chart" (100,000 on this terminal): M5 only reaches back to ~May 2025 and M1 to ~June 2026, while M15–D1 have the full 3 years. Phase 1's "3 years of data" goal needs this terminal setting raised (or a Dukascopy import); `data fetch` back-fills older data automatically once available. Why record it: it changes what Phase 2 can backtest on M5.
+- 2026-09-29 — Bar folders use the internal symbol (`data/bars/XAUUSD/...`), not the broker symbol (`XAUUSDm`). Why: data stays valid if the broker or suffix changes.
+- 2026-09-29 — Added `m1_history_months: 6` to `settings.yaml` (M1 is kept for 6 months, per PHASE_1_TASKS) instead of hard-coding it.
+- 2026-09-29 — `data fetch` only downloads missing ranges: forward from the last stored bar, and backward from the first stored bar (newest-first, stopping after 3 empty chunks). Holes in the middle are left for validation to report, not re-downloaded.
+- 2026-09-29 — SQLite schema follows SPEC §3.2 with small additions: every code-written table has `git_commit` + `config_hash` (also `experiments`), `strategies.status` allows `oos_passed` (from §8.1's ladder, missing in §3.2), and `experiments.dataset_split` also allows `walk_forward`/`paper`. `approvals` has no git/config columns because it records a human action.
 - 2026-09-29 — MT5 client (`data/mt5_client.py`) allows **DEMO accounts only**: REAL is refused in every mode (including `live`) until the SPEC §9 checks are built in Phase 10; CONTEST/unknown account types are refused too. If `.env` has `MT5_LOGIN`, the connected login must match it. Why: the safest reading of CLAUDE.md rule 1 while live checks don't exist yet.
 - 2026-09-29 — Exness MT5 server time is UTC (checked: live tick time equalled the PC's UTC clock), so MT5 bar timestamps are stored as UTC without an offset. Re-check if the broker/server changes.
 - 2026-09-29 — Without an `MT5_LOGIN` in `.env`, the client attaches to the already-logged-in MT5 terminal (still demo-checked). Why: lets `data ping` work before `.env` is created; SPEC assumed `.env` only.
