@@ -28,3 +28,4 @@ backtest:                        # backtest engine (docs/PHASE_2_TASKS.md)
   slippage_spread_multiple: 0.2  # slippage on market/stop entries and stop-loss exits
   commission_per_lot_usd: 0.0    # round turn; Exness Standard has no commission
   starting_balance: 10000        # USD, fixed for every backtest (Usama, 2026-09-30)
+  cost_stress_multiple: 1.5      # stress re-run: spread (and so slippage) x 1.5 (SPEC §7.4)

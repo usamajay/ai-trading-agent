@@ -151,7 +151,8 @@ class _Run:
     strategy: Strategy
     symbol: str
     timeframe: str
-    costs: CostModel
+    costs: CostModel  # fills and money
+    decision_costs: CostModel  # signal checks and sizing (normal costs, even under stress)
     limits: RiskLimits
     risk_basics: bool
     decision: _Bars
@@ -494,7 +495,7 @@ class _Run:
         if self.order is not None or self.position is not None:
             return "position_open"
         d = self.decision
-        at_close = self.costs.entry_side(sig.direction, d.close[i], d.spread[i])
+        at_close = self.decision_costs.entry_side(sig.direction, d.close[i], d.spread[i])
         if sig.order_type == "market":
             entry_ref = at_close
         else:
@@ -557,6 +558,7 @@ def run_backtest(
     exec_bars: pd.DataFrame | None = None,
     m1_bars: pd.DataFrame | None = None,
     risk_basics: bool = True,
+    decision_costs: CostModel | None = None,
 ) -> BacktestResult:
     """Run one strategy over one dataset (a split of one symbol/timeframe).
 
@@ -565,6 +567,9 @@ def run_backtest(
                every bar falls back to SL-first on the decision bar)
     m1_bars:   M1 bars for the side-by-side tie check only (never changes results)
     risk_basics: apply the temporary risk checks (min RR, SL vs ATR, spread)
+    decision_costs: costs for signal checks and sizing (default: `costs`). The cost
+               stress run passes the normal costs here, so it takes the same trades
+               and only fills them at worse prices.
     """
     check_strategy(strategy)
     if strategy.timeframes[0] != dataset.timeframe:
@@ -596,6 +601,7 @@ def run_backtest(
         symbol=dataset.symbol,
         timeframe=dataset.timeframe,
         costs=costs,
+        decision_costs=decision_costs or costs,
         limits=limits,
         risk_basics=risk_basics,
         decision=decision,

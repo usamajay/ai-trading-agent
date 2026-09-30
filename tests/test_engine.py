@@ -44,6 +44,7 @@ BT = BacktestSettings(
     slippage_spread_multiple=0.0,
     commission_per_lot_usd=0.0,
     starting_balance=10_000,
+    cost_stress_multiple=1.5,
 )
 LIMITS = load_config().risk
 NO_RULES = DataExclusions(excluded_windows=[], no_trade_windows=[], keep_gaps=[])
@@ -690,3 +691,41 @@ def test_daily_mark_to_market_values_the_open_trade() -> None:
     assert tuesday["equity"] == pytest.approx(result.final_balance)
     assert tuesday["closed_equity"] == pytest.approx(10_000 + t["net_pnl"])
     assert result.bars_in_split == 5
+
+
+def test_stress_costs_change_fills_not_which_trades_are_taken() -> None:
+    # 20 bars of range 2 (ATR 2), spread 100 points (0.1). A long sized from the ask
+    # 2000.1 with SL 1998.1 and TP 2004.1 has RR exactly 2.0 at normal costs.
+    from tradeagent.backtest.runner import stressed
+
+    bars = frame([(2000, 2001, 1999, 2000)] * 20, spread=100)
+    signal = {"direction": "long", "stop_loss": 1998.1, "take_profit": 2004.1}
+    data = flagged(bars, "M5", "swing")
+    dataset = Dataset(
+        "XAUUSD",
+        "M5",
+        "train",
+        "swing",
+        data["time_utc"].iloc[0],
+        data["time_utc"].iloc[-1] + pd.Timedelta(days=1),
+        data,
+        NO_WINDOWS,
+    )
+    normal = CostModel.from_settings("XAUUSD", GOLD, BT)
+    hard = stressed(normal, 1.5)
+
+    def go(costs: CostModel, decision: CostModel | None) -> BacktestResult:
+        return run_backtest(
+            Scripted({15: [signal]}), dataset, costs, LIMITS, BT, decision_costs=decision
+        )
+
+    base = go(normal, None)
+    assert len(base.trades) == 1
+    # Judged with stressed costs, the ask is 2000.15 and RR falls below 2: rejected.
+    assert go(hard, None).counts.get("rejected_rr") == 1
+    # The stress run judges with normal costs: same trade, filled 0.05 worse.
+    stress = go(hard, normal)
+    assert len(stress.trades) == 1
+    assert stress.trades["entry_price"].iloc[0] == pytest.approx(
+        base.trades["entry_price"].iloc[0] + 0.05
+    )

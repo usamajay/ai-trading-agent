@@ -49,6 +49,7 @@ BT = BacktestSettings(
     slippage_spread_multiple=0.2,
     commission_per_lot_usd=0.0,
     starting_balance=10_000,
+    cost_stress_multiple=1.5,
 )
 
 

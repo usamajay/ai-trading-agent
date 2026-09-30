@@ -660,6 +660,204 @@ def backtest_spread_check(
     )
 
 
+def _parse_params(items: list[str] | None) -> dict[str, float]:
+    params: dict[str, float] = {}
+    for item in items or []:
+        name, sep, value = item.partition("=")
+        if not sep:
+            raise typer.BadParameter(f"--param must look like name=value, got {item!r}")
+        params[name.strip()] = float(value)
+    return params
+
+
+@backtest_app.command("run")
+def backtest_run(
+    strategy: Annotated[str, typer.Option("--strategy", help="Registered strategy name.")],
+    symbol: Annotated[str, typer.Option("--symbol", "-s")] = "XAUUSD",
+    split: Annotated[str, typer.Option("--split", help="train or validation.")] = "train",
+    seed: Annotated[int, typer.Option("--seed")] = 1,
+    param: Annotated[
+        list[str] | None, typer.Option("--param", help="Parameter override, name=value.")
+    ] = None,
+) -> None:
+    """Backtest a strategy on one split, save it to backtest_runs and write a report."""
+    from pathlib import Path
+
+    from tradeagent.backtest.costs import CostError
+    from tradeagent.backtest.runs import execute_run
+    from tradeagent.backtest.splits import SplitError
+    from tradeagent.config import load_config, project_path
+    from tradeagent.data.store import BarStore, connect_db
+    from tradeagent.strategies import registry
+    from tradeagent.strategies.base import InvalidStrategy
+
+    if split not in ("train", "validation", "out_of_sample"):
+        typer.secho("split must be train or validation", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+    registry.load_builtins()
+    cfg = load_config()
+    store = BarStore(project_path(cfg.settings.storage.bars_dir))
+    conn = connect_db(project_path(cfg.settings.storage.sqlite_path))
+    try:
+        rec = execute_run(
+            cfg,
+            store,
+            conn,
+            strategy,
+            symbol,
+            split,  # type: ignore[arg-type]
+            seed,
+            _parse_params(param),
+            project_path(Path("data/backtests")),
+        )
+    except (SplitError, CostError, InvalidStrategy, KeyError, ValueError) as exc:
+        typer.secho(f"Cannot run: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+    finally:
+        conn.close()
+
+    t, e, st = rec.metrics["trades"], rec.metrics["equity"], rec.stress_metrics["trades"]
+    ci = rec.metrics["confidence_95"]["expectancy_r"]
+
+    def fmt(v: object, d: int = 3) -> str:
+        return "-" if v is None else f"{v:.{d}f}" if isinstance(v, float) else str(v)
+
+    typer.secho(
+        f"{strategy} on {symbol} {rec.run['timeframe']} ({split}), run #{rec.run['run_number']}",
+        bold=True,
+    )
+    if t["insufficient_sample"]:
+        typer.secho(f"  INSUFFICIENT SAMPLE: {t['trades']} trades (< 30)", fg=typer.colors.YELLOW)
+    ci_text = f"{fmt(ci[0])} to {fmt(ci[1])}" if ci else "-"
+    typer.echo(
+        f"  trades {t['trades']}, win rate {fmt(t['win_rate_pct'], 1)}%, "
+        f"profit factor {fmt(t['profit_factor'], 2)}"
+    )
+    typer.echo(
+        f"  expectancy {fmt(t['expectancy_r'])} R (95% CI {ci_text}), "
+        f"net ${e['net_profit_usd']:,.2f}"
+    )
+    typer.echo(
+        f"  max drawdown {e['max_dd_pct']:.2f}% (mark-to-market), "
+        f"{e['closed_trade_max_dd_pct']:.2f}% (closed trades); Sharpe {fmt(e['sharpe'], 2)}"
+    )
+    verdict = "PASS" if rec.run["stress_pass"] else "FAIL"
+    typer.echo(
+        f"  cost stress x{rec.run['cost_stress_multiple']}: expectancy "
+        f"{fmt(st['expectancy_r'])} R -> {verdict}"
+    )
+    breached = [k for k, v in rec.risk_flags.items() if v["breached"]]
+    typer.echo(
+        "  risk-limit flags: "
+        + (
+            ", ".join(f"{k} (first {rec.risk_flags[k]['first_breach_day']})" for k in breached)
+            or "none"
+        )
+    )
+    typer.echo(
+        f"  runs of {strategy}: train {rec.counts['train']}, validation {rec.counts['validation']}"
+    )
+    typer.echo(
+        f"  data fingerprint {rec.run['data_hash'][:12]}, config {cfg.config_hash[:12]}, "
+        f"git {rec.run['git_commit']}"
+    )
+    typer.echo(f"  report: {rec.output_dir / 'report.md'}")
+
+
+@backtest_app.command("list")
+def backtest_list(
+    strategy: Annotated[str | None, typer.Option("--strategy")] = None,
+    limit: Annotated[int, typer.Option("--limit", "-n")] = 20,
+) -> None:
+    """Show recent backtest runs (newest first)."""
+    import pandas as pd
+
+    from tradeagent.backtest.records import list_runs
+    from tradeagent.config import load_config, project_path
+    from tradeagent.data.store import connect_db
+
+    cfg = load_config()
+    conn = connect_db(project_path(cfg.settings.storage.sqlite_path))
+    try:
+        runs = list_runs(conn, strategy, limit)
+    finally:
+        conn.close()
+    if runs.empty:
+        typer.echo("No backtest runs yet. Run: uv run tradeagent backtest run --strategy NAME")
+        return
+    typer.echo(
+        f"{'run_id':<24} {'strategy':<18} {'sym':<7} {'tf':<4} {'split':<10} "
+        f"{'#':>3} {'trades':>6} {'exp R':>7} {'stress':>6}"
+    )
+    for r in runs.to_dict("records"):
+        # A missing expectancy comes back from SQLite as NaN, not None.
+        value = r["expectancy_r"]
+        exp = "-" if pd.isna(value) else f"{float(value):.3f}"
+        flag = "*" if r["insufficient_sample"] else " "
+        typer.echo(
+            f"{r['run_id']!s:<24} {r['strategy']!s:<18} {r['symbol']!s:<7} "
+            f"{r['timeframe']!s:<4} {r['split']!s:<10} {int(r['run_number']):>3} "
+            f"{int(r['trades']):>5}{flag} {exp:>7} {'PASS' if r['stress_pass'] else 'FAIL':>6}"
+        )
+    typer.echo("* = insufficient sample (< 30 trades)")
+
+
+@backtest_app.command("lookahead-check")
+def backtest_lookahead_check(
+    strategy: Annotated[str, typer.Option("--strategy")],
+    symbol: Annotated[str, typer.Option("--symbol", "-s")] = "XAUUSD",
+    split: Annotated[str, typer.Option("--split")] = "train",
+    seed: Annotated[int, typer.Option("--seed")] = 1,
+    bars: Annotated[
+        int, typer.Option("--bars", help="Last N decision bars of the split to check.")
+    ] = 3000,
+    cuts: Annotated[int, typer.Option("--cuts", help="Truncation points.")] = 20,
+    param: Annotated[list[str] | None, typer.Option("--param")] = None,
+) -> None:
+    """Truncation test on real data: does the strategy use future bars? (Task 2.6)"""
+    import pandas as pd
+
+    from tradeagent.backtest.dataset import load_bars, load_dataset
+    from tradeagent.backtest.lookahead import check_lookahead
+    from tradeagent.config import load_config, project_path
+    from tradeagent.data.store import BarStore
+    from tradeagent.strategies import registry
+
+    registry.load_builtins()
+    params = _parse_params(param)
+    cfg = load_config()
+    store = BarStore(project_path(cfg.settings.storage.bars_dir))
+    first = registry.create(strategy, seed, params)
+    decision_tf = first.timeframes[0]
+    dataset = load_dataset(cfg, store, symbol, decision_tf, split, first.style, warmup_bars=0)  # type: ignore[arg-type]
+    decision = dataset.bars.tail(bars).reset_index(drop=True)
+    start, end = decision["time_utc"].iloc[0], dataset.end_utc
+    frames = {decision_tf: decision}
+    for tf in first.timeframes[1:]:
+        other = load_bars(store, symbol, tf)
+        history = start - pd.Timedelta(days=60)  # context history before the first bar
+        frames[tf] = other[(other["time_utc"] >= history) & (other["time_utc"] < end)]
+    typer.echo(
+        f"Checking {strategy} on {symbol} {decision_tf}: last {len(decision):,} bars of "
+        f"{split}, {cuts} cuts ..."
+    )
+    problems = check_lookahead(
+        lambda: registry.create(strategy, seed, params), symbol, frames, cuts
+    )
+    if not problems:
+        typer.secho(
+            "PASS: no look-ahead found (signals and indicators unchanged by future data)",
+            fg=typer.colors.GREEN,
+        )
+        return
+    typer.secho(
+        f"FAIL: {len(problems)} problem(s) - the strategy uses future data", fg=typer.colors.RED
+    )
+    for p in problems[:10]:
+        typer.echo(f"  cut {p.cut_utc}: {p.what} at {p.where}: {p.detail}")
+    raise typer.Exit(code=1)
+
+
 def _fmt_day(ts: object) -> str:
     return "-" if ts is None else f"{ts:%Y-%m-%d}"
 

@@ -45,4 +45,7 @@ uv run tradeagent data resample-check  # New York-close D1/H4 built from H1 vs b
 uv run tradeagent backtest splits      # split dates (proposed/frozen), exclusions per split
 uv run tradeagent backtest costs       # cost snapshot in use (--snapshot refreshes it from MT5)
 uv run tradeagent backtest spread-check  # real tick spreads vs stored bar spreads (needs MT5)
+uv run tradeagent backtest run --strategy NAME --symbol XAUUSD --split train --seed 1  # report in data/backtests/
+uv run tradeagent backtest list         # past runs (run counter, stress PASS/FAIL)
+uv run tradeagent backtest lookahead-check --strategy NAME  # truncation test on real data
 ```

@@ -289,6 +289,39 @@ CREATE TABLE IF NOT EXISTS risk_events (
     git_commit TEXT NOT NULL,
     config_hash TEXT NOT NULL
 );
+
+-- Backtest runs (Phase 2). Trades live in output_dir/trades.parquet, not in `trades`
+-- (that table is for paper/demo/live). run_number = how many runs this strategy
+-- (by name, any version/params) has had on this split, counting this one: the
+-- number of variants tried, for the multiple-testing rule (SPEC §7.4).
+CREATE TABLE IF NOT EXISTS backtest_runs (
+    run_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    strategy TEXT NOT NULL,
+    strategy_version TEXT NOT NULL,
+    params_json TEXT NOT NULL,
+    seed INTEGER,
+    symbol TEXT NOT NULL,
+    timeframe TEXT NOT NULL,
+    split TEXT NOT NULL CHECK (split IN ('train', 'validation', 'out_of_sample')),
+    date_start TEXT NOT NULL,
+    date_end TEXT NOT NULL,
+    run_number INTEGER NOT NULL,
+    git_commit TEXT NOT NULL,
+    config_hash TEXT NOT NULL,
+    data_hash TEXT NOT NULL,
+    cost_stress_multiple REAL NOT NULL,
+    trades INTEGER NOT NULL,
+    insufficient_sample INTEGER NOT NULL,
+    expectancy_r REAL,
+    stress_expectancy_r REAL,
+    stress_pass INTEGER NOT NULL,
+    metrics_json TEXT NOT NULL,
+    stress_metrics_json TEXT NOT NULL,
+    risk_flags_json TEXT NOT NULL,
+    output_dir TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_backtest_runs_strategy ON backtest_runs (strategy, split);
 """
 
 TABLES = (
@@ -303,6 +336,7 @@ TABLES = (
     "lessons",
     "approvals",
     "risk_events",
+    "backtest_runs",
 )
 
 
