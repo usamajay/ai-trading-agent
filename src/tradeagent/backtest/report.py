@@ -262,7 +262,14 @@ def report_markdown(
         f"| Exposure | {_num(e['exposure_pct'], 1, '%')} of bars |",
         f"| Trading days | {e['trading_days']} |",
         "",
-        "## Risk-limit flags (informational until the Phase 4 risk engine)",
+        "## Account risk limits",
+        "",
+        (
+            "**Enforced** in this run: trading stopped when a limit was hit."
+            if '"__account_limits": "enforced"' in run["params_json"]
+            else "Reported as flags in this run (not enforced), so the whole period is "
+            "evaluated; paper and live trading always enforce them."
+        ),
         "",
         (
             "Checked on daily mark-to-market equity (moves inside a day are not seen, so a real "

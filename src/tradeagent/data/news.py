@@ -18,6 +18,7 @@ import urllib.request
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
 import pandas as pd
 
@@ -149,7 +150,7 @@ class NewsCalendar:
     covered: tuple[tuple[pd.Timestamp, pd.Timestamp], ...]  # [start, end) ranges known
     blackout_minutes: int
 
-    def status(self, now: datetime) -> tuple[str, str]:
+    def status(self, now: datetime) -> tuple[Literal["clear", "blackout", "unknown"], str]:
         t = pd.Timestamp(now).tz_convert("UTC")
         window = pd.Timedelta(minutes=self.blackout_minutes)
         for event in self.events:

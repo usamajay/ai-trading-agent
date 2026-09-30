@@ -46,14 +46,20 @@ def execute_run(
     seed: int,
     params: dict[str, float],
     out_root: Path,
+    enforce_account_limits: bool = False,
 ) -> RunRecord:
     strategy = registry.create(strategy_name, seed, params)
     check_strategy(strategy)
     inputs = load_inputs(cfg, store, strategy, symbol, split)
-    result = run_inputs(cfg, strategy, inputs)
+    enforce = enforce_account_limits
+    result = run_inputs(cfg, strategy, inputs, enforce_account_limits=enforce)
     multiple = cfg.settings.backtest.cost_stress_multiple
     stress_result = run_inputs(
-        cfg, registry.create(strategy_name, seed, params), inputs, stressed(inputs.costs, multiple)
+        cfg,
+        registry.create(strategy_name, seed, params),
+        inputs,
+        stressed(inputs.costs, multiple),
+        enforce_account_limits=enforce,
     )
     metrics = compute_metrics(result)
     stress_metrics = compute_metrics(stress_result)
@@ -68,7 +74,11 @@ def execute_run(
         "created_at": created.isoformat(),
         "strategy": strategy_name,
         "strategy_version": strategy.version,
-        "params_json": json.dumps(strategy.params, sort_keys=True),
+        # The account-limit mode is part of how the run was made, so it is stored too.
+        "params_json": json.dumps(
+            {**strategy.params, "__account_limits": "enforced" if enforce else "flags"},
+            sort_keys=True,
+        ),
         "seed": seed,
         "symbol": symbol,
         "timeframe": inputs.dataset.timeframe,

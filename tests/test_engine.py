@@ -183,7 +183,7 @@ def run(
         settings,
         exec_bars=exec_bars,
         m1_bars=m1,
-        risk_basics=risk,
+        risk_rules=risk,
     )
 
 
@@ -637,13 +637,13 @@ def test_m1_check_is_reported_but_never_changes_the_result() -> None:
 # --- risk basics and accounting ------------------------------------------------------------
 
 
-def test_risk_basics_reject_and_accept() -> None:
+def test_risk_rules_reject_and_accept() -> None:
     # 20 bars with range 2 and no gaps: ATR(14) = 2. Stop 2 (1 x ATR).
     bars = frame([(2000, 2001, 1999, 2000)] * 20)
     low_rr = {"direction": "long", "stop_loss": 1998.0, "take_profit": 2003.0}  # RR 1.5
     good = {"direction": "long", "stop_loss": 1998.0, "take_profit": 2004.0}  # RR 2.0
     result = run(Scripted({3: [good], 15: [low_rr], 16: [good]}), bars, risk=True)
-    assert result.counts["rejected_no_atr"] == 1  # bar 3: ATR not ready
+    assert result.counts["rejected_sl_atr"] == 1  # bar 3: ATR not ready
     assert result.counts["rejected_rr"] == 1
     assert result.counts["orders"] == 1 and len(result.trades) == 1
 
@@ -729,3 +729,63 @@ def test_stress_costs_change_fills_not_which_trades_are_taken() -> None:
     assert stress.trades["entry_price"].iloc[0] == pytest.approx(
         base.trades["entry_price"].iloc[0] + 0.05
     )
+
+
+def test_news_blackout_rejects_signals_in_backtests() -> None:
+    from tradeagent.data.news import NewsCalendar, NewsEvent
+
+    bars = frame([(2000, 2001, 1999, 2000)] * 20)
+    good = {"direction": "long", "stop_loss": 1998.0, "take_profit": 2004.0}
+    event = NewsEvent(ny("2026-01-06 11:30"), "CPI", "test")  # bar 15 closes at 11:20
+    covered = ((ny("2026-01-01"), ny("2026-02-01")),)
+    data = flagged(bars, "M5", "swing")
+    dataset = Dataset(
+        "XAUUSD",
+        "M5",
+        "train",
+        "swing",
+        data["time_utc"].iloc[0],
+        data["time_utc"].iloc[-1] + pd.Timedelta(days=1),
+        data,
+        NO_WINDOWS,
+    )
+    costs = CostModel.from_settings("XAUUSD", GOLD, BT)
+
+    def go(news: NewsCalendar) -> BacktestResult:
+        return run_backtest(Scripted({15: [good]}), dataset, costs, LIMITS, BT, news=news)
+
+    blocked = go(NewsCalendar((event,), covered, 30))
+    assert blocked.counts.get("rejected_news") == 1 and blocked.trades.empty
+    assert len(go(NewsCalendar((), covered, 30)).trades) == 1
+    unknown = go(NewsCalendar((), (), 30))  # no calendar for these dates: not traded
+    assert unknown.counts.get("rejected_news_unknown") == 1
+
+
+def test_account_limits_enforced_only_when_asked() -> None:
+    # Four stop-outs in a row (bars of range 2, ATR 2, stop 2): the fifth signal falls
+    # inside the 24-hour pause when account limits are enforced.
+    rows = [(2000, 2001, 1999, 2000)] * 16
+    for _ in range(5):
+        rows += [(2000, 2001, 1999, 2000), (2000, 2000.5, 1997.5, 1998)]
+    bars = frame(rows)
+    signal = {"direction": "long", "stop_loss": 1998.0, "take_profit": 2004.0}
+    plan = {16 + 2 * k: [signal] for k in range(5)}  # on the flat bars (close 2000)
+    data = flagged(bars, "M5", "swing")
+    dataset = Dataset(
+        "XAUUSD",
+        "M5",
+        "train",
+        "swing",
+        data["time_utc"].iloc[0],
+        data["time_utc"].iloc[-1] + pd.Timedelta(days=1),
+        data,
+        NO_WINDOWS,
+    )
+    costs = CostModel.from_settings("XAUUSD", GOLD, BT)
+
+    free = run_backtest(Scripted(plan), dataset, costs, LIMITS, BT)
+    assert len(free.trades) == 5 and "rejected_loss_streak" not in free.counts
+    enforced = run_backtest(Scripted(plan), dataset, costs, LIMITS, BT, enforce_account_limits=True)
+    assert len(enforced.trades) == 4
+    assert enforced.counts["account_loss_streak"] == 1
+    assert enforced.counts["rejected_loss_streak"] == 1

@@ -10,10 +10,12 @@ import pandas as pd
 from tradeagent.backtest.costs import CostModel
 from tradeagent.backtest.dataset import Dataset, flag_bars, load_bars, load_dataset
 from tradeagent.backtest.engine import BacktestResult, run_backtest
-from tradeagent.config import AppConfig, SplitName
+from tradeagent.config import PROJECT_ROOT, AppConfig, SplitName
+from tradeagent.data.news import NewsCalendar, build_calendar
 from tradeagent.data.store import BarStore
 from tradeagent.strategies.base import Strategy
 
+NEWS_HISTORY = PROJECT_ROOT / "config" / "news" / "usd_high_impact_history.csv"
 FINGERPRINT_COLUMNS = ["open", "high", "low", "close", "tick_volume", "spread"]
 
 
@@ -24,7 +26,8 @@ class RunInputs:
     exec_bars: pd.DataFrame | None  # flagged M5 bars (strategies above M5)
     m1: pd.DataFrame | None  # side-by-side tie check only
     costs: CostModel
-    data_hash: str  # fingerprint of every bar used
+    news: NewsCalendar  # historical high-impact USD events (news blackout)
+    data_hash: str  # fingerprint of every bar used and of the news history
 
 
 def bars_fingerprint(frames: dict[str, pd.DataFrame]) -> str:
@@ -71,13 +74,19 @@ def load_inputs(
         frames["exec_M5"] = exec_bars
     if not m1.empty:
         frames["M1"] = m1
+    news = build_calendar(NEWS_HISTORY, None, dataset.end_utc, cfg.risk.news_blackout_minutes)
+    news_bytes = NEWS_HISTORY.read_bytes() if NEWS_HISTORY.is_file() else b""
+    data_hash = hashlib.sha256(
+        (bars_fingerprint(frames) + hashlib.sha256(news_bytes).hexdigest()).encode()
+    ).hexdigest()
     return RunInputs(
         dataset=dataset,
         context=context,
         exec_bars=exec_bars,
         m1=m1 if not m1.empty else None,
         costs=CostModel.from_config(cfg, symbol),
-        data_hash=bars_fingerprint(frames),
+        news=news,
+        data_hash=data_hash,
     )
 
 
@@ -97,7 +106,8 @@ def run_inputs(
     strategy: Strategy,
     inputs: RunInputs,
     costs: CostModel | None = None,
-    risk_basics: bool = True,
+    risk_rules: bool = True,
+    enforce_account_limits: bool = False,
 ) -> BacktestResult:
     return run_backtest(
         strategy,
@@ -108,8 +118,10 @@ def run_inputs(
         context=inputs.context,
         exec_bars=inputs.exec_bars,
         m1_bars=inputs.m1,
-        risk_basics=risk_basics,
+        risk_rules=risk_rules,
         decision_costs=inputs.costs,
+        news=inputs.news,
+        enforce_account_limits=enforce_account_limits,
     )
 
 
@@ -119,9 +131,9 @@ def run_from_store(
     strategy: Strategy,
     symbol: str,
     split: SplitName,
-    risk_basics: bool = True,
+    risk_rules: bool = True,
 ) -> BacktestResult:
     """Backtest `strategy` on one split of `symbol` using the stored bars."""
     return run_inputs(
-        cfg, strategy, load_inputs(cfg, store, strategy, symbol, split), risk_basics=risk_basics
+        cfg, strategy, load_inputs(cfg, store, strategy, symbol, split), risk_rules=risk_rules
     )

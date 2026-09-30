@@ -689,6 +689,13 @@ def backtest_run(
     param: Annotated[
         list[str] | None, typer.Option("--param", help="Parameter override, name=value.")
     ] = None,
+    enforce_account_limits: Annotated[
+        bool,
+        typer.Option(
+            "--enforce-account-limits",
+            help="Stop trading when daily/weekly/drawdown/loss-streak limits hit.",
+        ),
+    ] = False,
 ) -> None:
     """Backtest a strategy on one split, save it to backtest_runs and write a report."""
     from pathlib import Path
@@ -719,6 +726,7 @@ def backtest_run(
             seed,
             _parse_params(param),
             project_path(Path("data/backtests")),
+            enforce_account_limits=enforce_account_limits,
         )
     except (SplitError, CostError, InvalidStrategy, KeyError, ValueError) as exc:
         typer.secho(f"Cannot run: {exc}", fg=typer.colors.RED, err=True)

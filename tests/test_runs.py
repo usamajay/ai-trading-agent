@@ -166,7 +166,7 @@ def test_report_and_files(
         "## Multiple testing",
         "## Summary: normal costs vs cost",
         "## 95% confidence intervals",
-        "## Risk-limit flags",
+        "## Account risk limits",
         "## Costs (% of gross profit)",
         "## Minimum balance",
         "## Conventions",
@@ -245,3 +245,16 @@ def test_baseline_distribution_one_row_per_seed(
     assert again.iloc[0].equals(df.iloc[0])  # same seed, same row
     path = save_distribution(df, tmp_path, "XAUUSD", "M15", "train")
     assert pd.read_parquet(path).shape == df.shape
+
+
+def test_account_limit_mode_is_recorded(
+    cfg: AppConfig, store: BarStore, conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    flags = run(cfg, store, conn, tmp_path)
+    assert json.loads(flags.run["params_json"])["__account_limits"] == "flags"
+    enforced = execute_run(
+        cfg, store, conn, NAME, "XAUUSD", "train", 1, {}, tmp_path, enforce_account_limits=True
+    )
+    assert json.loads(enforced.run["params_json"])["__account_limits"] == "enforced"
+    report = (enforced.output_dir / "report.md").read_text(encoding="utf-8")
+    assert "**Enforced** in this run" in report

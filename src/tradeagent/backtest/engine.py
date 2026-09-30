@@ -33,11 +33,13 @@ import pandas as pd
 
 from tradeagent.backtest.costs import CostModel
 from tradeagent.backtest.dataset import FLAG_COLUMNS, Dataset
-from tradeagent.backtest.risk_basics import check_signal, min_balance, position_size
 from tradeagent.config import BacktestSettings, RiskLimits
 from tradeagent.data.market_hours import NEW_YORK, trading_day
 from tradeagent.data.mt5_client import TIMEFRAMES
 from tradeagent.features.indicators import atr
+from tradeagent.risk.engine import NewsSource, OrderRequest, RiskEngine
+from tradeagent.risk.sizing import min_balance, position_size
+from tradeagent.risk.state import RiskState
 from tradeagent.strategies.base import (
     Frames,
     InvalidSignal,
@@ -154,7 +156,8 @@ class _Run:
     costs: CostModel  # fills and money
     decision_costs: CostModel  # signal checks and sizing (normal costs, even under stress)
     limits: RiskLimits
-    risk_basics: bool
+    risk_engine: RiskEngine | None  # None: size only, no risk rules (hand-built tests)
+    risk_state: RiskState | None  # kept only when account limits are enforced
     decision: _Bars
     exec_bars: _Bars | None
     exec_range: tuple[np.ndarray, np.ndarray] | None
@@ -211,6 +214,9 @@ class _Run:
                 - c.commission(lots)
             )
         self.daily.append((d.day[i], d.end[i], value, self.equity))
+        if self.risk_state is not None:
+            for code in self.risk_state.mark(value, d.end[i], self.limits):
+                self.counts[f"account_{code}"] += 1
 
     # --- managing orders and positions ----------------------------------------------
 
@@ -408,6 +414,9 @@ class _Run:
         sl_distance = abs(p.entry_price - sig.stop_loss)
         risk_usd = sl_distance * value
         self.equity += net
+        if self.risk_state is not None:
+            for code in self.risk_state.record_close(net, exit_time, self.limits):
+                self.counts[f"account_{code}"] += 1
         self.curve.append((exit_time, self.equity))
         self.trades.append(
             {
@@ -503,18 +512,33 @@ class _Run:
                 return "entry_side"
             assert sig.entry_price is not None
             entry_ref = sig.entry_price
-        if self.risk_basics:
-            reason, lots = check_signal(
-                entry_ref=entry_ref,
-                stop_loss=sig.stop_loss,
-                take_profit=sig.take_profit,
-                atr=float(self.atr[i]),
-                bar_spread=float(d.spread[i]),
-                median_spread=float(self.median_spread[i]),
-                equity=self.equity,
-                limits=self.limits,
-                spec=self.costs.spec,
+        if self.risk_engine is not None:
+            now = d.end[i]
+            state = self.risk_state
+            if state is None:  # account limits reported, not enforced: a fresh state
+                state = RiskState.start(self.equity, now)
+            else:
+                for code in state.mark(self.equity, now, self.limits):
+                    self.counts[f"account_{code}"] += 1
+            decision = self.risk_engine.evaluate(
+                OrderRequest(
+                    order_id=f"{self.symbol}-{i}",
+                    symbol=self.symbol,
+                    direction=sig.direction,
+                    entry_ref=entry_ref,
+                    stop_loss=sig.stop_loss,
+                    take_profit=sig.take_profit,
+                    time_utc=now,
+                    atr=float(self.atr[i]),
+                    spread=float(d.spread[i]),
+                    median_spread=float(self.median_spread[i]),
+                ),
+                state,
             )
+            lots = decision.lots
+            reason = decision.codes[0] if decision.codes else None
+            for code in decision.codes[1:]:  # every failed rule is counted
+                self.counts[f"rejected_{code}"] += 1
         else:
             lots = position_size(
                 self.equity,
@@ -557,8 +581,10 @@ def run_backtest(
     context: dict[str, pd.DataFrame] | None = None,
     exec_bars: pd.DataFrame | None = None,
     m1_bars: pd.DataFrame | None = None,
-    risk_basics: bool = True,
+    risk_rules: bool = True,
     decision_costs: CostModel | None = None,
+    news: NewsSource | None = None,
+    enforce_account_limits: bool = False,
 ) -> BacktestResult:
     """Run one strategy over one dataset (a split of one symbol/timeframe).
 
@@ -566,7 +592,10 @@ def run_backtest(
     exec_bars: flagged M5 bars covering the dataset (needed above M5; without them
                every bar falls back to SL-first on the decision bar)
     m1_bars:   M1 bars for the side-by-side tie check only (never changes results)
-    risk_basics: apply the temporary risk checks (min RR, SL vs ATR, spread)
+    risk_rules: check signals with the risk engine (risk/engine.py): stop distance,
+               reward:risk, spread, sizing, news blackout (with `news`). Account
+               limits (daily/weekly loss, drawdown, loss streak) are enforced only
+               with `enforce_account_limits`; otherwise they are reported as flags.
     decision_costs: costs for signal checks and sizing (default: `costs`). The cost
                stress run passes the normal costs here, so it takes the same trades
                and only fills them at worse prices.
@@ -606,7 +635,15 @@ def run_backtest(
         costs=costs,
         decision_costs=decision_costs or costs,
         limits=limits,
-        risk_basics=risk_basics,
+        risk_engine=RiskEngine(
+            limits,
+            {dataset.symbol: (decision_costs or costs).spec},
+            news=news,
+            account_rules=enforce_account_limits,
+        )
+        if risk_rules
+        else None,
+        risk_state=None,
         decision=decision,
         exec_bars=exec_view,
         exec_range=exec_range,
@@ -623,6 +660,8 @@ def run_backtest(
     )
     first_in_split = int(np.argmax(decision.in_split)) if decision.in_split.any() else 0
     run.curve.append((decision.time[first_in_split], settings.starting_balance))
+    if risk_rules and enforce_account_limits:
+        run.risk_state = RiskState.start(settings.starting_balance, decision.time[first_in_split])
     run.run()
 
     trades = pd.DataFrame(run.trades, columns=TRADE_COLUMNS)
