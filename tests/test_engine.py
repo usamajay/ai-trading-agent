@@ -15,7 +15,14 @@ from tradeagent.backtest.costs import CostModel
 from tradeagent.backtest.dataset import WINDOW_COLUMNS, Dataset, flag_bars
 from tradeagent.backtest.engine import BacktestResult, held_over_weekend, run_backtest
 from tradeagent.config import BacktestSettings, DataExclusions, SymbolCosts, load_config
-from tradeagent.strategies.base import BaseStrategy, MarketContext, Signal, Style
+from tradeagent.strategies.base import (
+    BaseStrategy,
+    InvalidSignal,
+    MarketContext,
+    Signal,
+    Style,
+    TradeEvent,
+)
 
 NY = "America/New_York"
 GOLD = SymbolCosts(
@@ -789,3 +796,161 @@ def test_account_limits_enforced_only_when_asked() -> None:
     assert len(enforced.trades) == 4
     assert enforced.counts["account_loss_streak"] == 1
     assert enforced.counts["rejected_loss_streak"] == 1
+
+
+# --- stop moves, exit_by, trade hooks (Phase 6, GoldSR port) ---------------------------
+
+# Long filled at 2001 (M15 bar 1 open), first stop 1995 (1R = $6), target 2013 (2R).
+# Stop moves: at 2007 (1R) -> 2001.3 (breakeven + $0.30); at 2010 (1.5R) -> 2007 (TP1).
+MOVES = {
+    "direction": "long",
+    "stop_loss": 1995.0,
+    "take_profit": 2013.0,
+    "stop_moves": ((2007.0, 2001.3), (2010.0, 2007.0)),
+}
+
+
+def moved(sub_rows: list[tuple[float, float, float, float]]) -> BacktestResult:
+    m5, m15 = m15_case(sub_rows)
+    return run(Scripted({0: [MOVES]}, timeframes=("M15",)), m15, exec_m5=m5)
+
+
+def test_stop_moves_to_breakeven_then_exits_there() -> None:
+    t = only_trade(
+        moved(
+            [
+                (2001, 2007.5, 2001.5, 2007),  # reaches 1R: stop -> 2001.3 (not hit here)
+                (2007, 2007.2, 2001, 2002),  # falls back through 2001.3
+                (2002, 2002.5, 2001.5, 2002),
+            ]
+        )
+    )
+    assert (t["exit_reason"], t["stop_stage"], t["exit_price"]) == ("sl", 1, 2001.3)
+    assert t["stop_loss"] == 1995.0 and t["risk_usd"] == pytest.approx(54.0)  # 1R unchanged
+    assert t["r_multiple"] == pytest.approx(0.3 / 6)
+
+
+def test_second_move_locks_tp1() -> None:
+    t = only_trade(
+        moved(
+            [
+                (2001, 2007.5, 2001.5, 2007),  # stage 1
+                (2007.5, 2010.5, 2007.5, 2010),  # 1.5R: stop -> 2007
+                (2010, 2010.2, 2006, 2006.5),  # back through 2007
+            ]
+        )
+    )
+    assert (t["exit_reason"], t["stop_stage"], t["exit_price"]) == ("sl", 2, 2007.0)
+    assert t["r_multiple"] == pytest.approx(1.0)
+
+
+def test_trigger_and_new_stop_in_one_m5_bar_exit_at_the_new_stop() -> None:
+    result = moved(
+        [(2001, 2007.5, 2000.9, 2002), (2002, 2003, 2001.5, 2002), (2002, 2003, 2001.5, 2002)]
+    )
+    t = only_trade(result)
+    assert (t["exit_price"], t["stop_stage"], t["tie"]) == (2001.3, 1, "move_same_bar")
+    assert result.counts["tie_move_same_bar"] == 1
+
+
+def test_first_stop_still_wins_before_any_move() -> None:
+    t = only_trade(
+        moved([(2001, 2002, 1994, 1996), (1996, 1997, 1995.5, 1996), (1996, 1997, 1995.5, 1996)])
+    )
+    assert (t["exit_reason"], t["stop_stage"], t["exit_price"]) == ("sl", 0, 1995.0)
+
+
+def test_gap_through_a_moved_stop_fills_at_the_open() -> None:
+    t = only_trade(
+        moved(
+            [
+                (2001, 2007.5, 2001.5, 2007),  # stage 1: stop 2001.3
+                (2007, 2007.2, 2003, 2004),
+                (2000, 2001, 1999, 2000.5),  # opens below 2001.3
+            ]
+        )
+    )
+    assert (t["exit_reason"], t["stop_stage"], t["exit_price"]) == ("sl_gap", 1, 2000.0)
+
+
+def test_target_after_the_moves() -> None:
+    t = only_trade(
+        moved(
+            [
+                (2001, 2007.5, 2001.5, 2007),
+                (2007.5, 2010.5, 2007.5, 2010),
+                (2010, 2013.5, 2009, 2013),
+            ]
+        )
+    )
+    assert (t["exit_reason"], t["stop_stage"], t["exit_price"]) == ("tp", 2, 2013.0)
+
+
+def test_bad_stop_moves_are_refused() -> None:
+    base = {
+        "symbol": "XAUUSD",
+        "why": "x",
+        "direction": "long",
+        "stop_loss": 1995.0,
+        "take_profit": 2013.0,
+    }
+    for moves in (
+        ((2007.0, 1994.0),),  # loosens the stop
+        ((2007.0, 2008.0),),  # new stop beyond its trigger
+        ((2007.0, 2001.0), (2010.0, 2000.0)),  # second move loosens
+        ((float("nan"), 2001.0),),
+    ):
+        with pytest.raises(InvalidSignal):
+            Signal(**base, stop_moves=moves)  # type: ignore[arg-type]
+    short = {**base, "direction": "short", "stop_loss": 2005.0, "take_profit": 1990.0}
+    Signal(**short, stop_moves=((1999.0, 2004.7), (1996.0, 1999.0)))  # type: ignore[arg-type]
+
+
+def test_exit_by_closes_at_the_first_bar_opening_after_it() -> None:
+    plan = {0: [{**LONG, "exit_by": ny("2026-01-06 10:12")}]}
+    bars = frame([(2000, 2001, 1999, 2000.5)] + [(2001, 2002, 2000.5, 2001.5)] * 4)
+    t = only_trade(run(Scripted(plan), bars))
+    assert (t["exit_reason"], t["exit_time"], t["exit_price"]) == (
+        "exit_by",
+        ny("2026-01-06 10:15"),
+        2001.0,
+    )
+
+
+def test_exit_by_cancels_a_pending_order() -> None:
+    limit = {
+        **LONG,
+        "order_type": "limit",
+        "entry_price": 1998.0,
+        "expiry_bars": 5,
+        "exit_by": ny("2026-01-06 10:10"),
+    }
+    bars = frame([(2000, 2001, 1999, 2000.5)] * 5)
+    result = run(Scripted({0: [limit]}), bars)
+    assert result.trades.empty and result.counts["cancelled_exit_by"] == 1
+
+
+class Listening(Scripted):
+    def __init__(self, plan: dict[int, list[dict[str, object]]]) -> None:
+        super().__init__(plan, timeframes=("M15",))
+        self.events: list[TradeEvent] = []
+
+    def on_trade_opened(self, event: TradeEvent) -> None:
+        self.events.append(event)
+
+    def on_trade_closed(self, event: TradeEvent) -> None:
+        self.events.append(event)
+
+
+def test_strategy_hears_about_its_fills_and_exits() -> None:
+    m5, m15 = m15_case(
+        [(2001, 2007.5, 2001.5, 2007), (2007, 2007.2, 2001, 2002), (2002, 2002.5, 2001.5, 2002)]
+    )
+    s = Listening({0: [{**MOVES, "tag": "t1"}]})
+    run(s, m15, exec_m5=m5)
+    opened, closed = s.events
+    assert (opened.tag, opened.entry_price, opened.exit_time) == ("t1", 2001.0, None)
+    assert opened.entry_time == ny("2026-01-06 10:15")
+    assert (closed.exit_reason, closed.stop_stage, closed.exit_price) == ("sl", 1, 2001.3)
+    assert closed.net_pnl == pytest.approx(0.3 / 0.001 * 0.1 * 0.09)
+    assert closed.stop_loss == 1995.0

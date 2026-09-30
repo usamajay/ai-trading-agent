@@ -25,6 +25,20 @@ Not run as strategy experiments (no run counted):
 - **H3 (oil costs)** is answered from cost-per-trade data already measured (random baselines at M15, H1, H4), not by new strategy runs.
 - **H5 (GoldSR EA)** waits for Usama's rules.
 
+## Summary (Usama's decisions 2026-09-30)
+
+| Hypothesis | Status | Evidence |
+|---|---|---|
+| H1 higher timeframes | **falsified** | cost per trade in R falls M15 → H1 but not H1 → H4 (swap grows with holding time); H4/D1 variants 0/8 pass with 4–61 train trades |
+| H2 swap asymmetry | **supported (cost only)** | measured swap cost; strategy tests withdrawn (drift) |
+| H3 oil too costly | **supported** | oil costs 2–3× gold at every timeframe; no oil strategy near the 95th percentile |
+| H4 regime filters | **falsified** (4 strategies, labeller `research-1`) | 0/8 pass; no improvement beyond noise |
+| H5 GoldSR EA | waiting for rules | — |
+
+Strict multiple-testing total: **16 experiment runs** (E0001–E0008, E0013–E0020); E0009–E0012 withdrawn, not counted.
+
+**Standing caveat:** gold rose +77.3% over train (2023-10-01 → 2025-06-27). Any direction-biased idea on gold must beat the same-direction random baseline, and this uptrend may not repeat in validation or out-of-sample.
+
 ## Results
 
 ### H4 regime filters (E0013–E0020): 0 of 8 pass
@@ -56,4 +70,32 @@ Each strategy run only when its decision bar is in its declared regime (research
 
 **Random gold longs make money on train (86 of 100 seeds positive).** Cause checked: gold rose **+77.3%** over the train period (1846 → 3275), so random longs ride the trend; random shorts lose (2 of 100 positive). The mean of long and short (−0.036 R) matches the both-direction baseline (−0.044 R), as it should if the engine is right. Oil fell −28.4% yet oil shorts still lose more than longs, because shorts pay swap (cost 0.176 R vs 0.060 R per trade). This is **market drift, not a bug**, but it matters: over this train period any long bias on gold looks good, and the H2 gold comparison (short vs long) is dominated by drift rather than swap. Stopped here to ask Usama (CLAUDE.md: random baseline makes clear money).
 
-E0001–E0012 (H1, H2) are registered but **not run yet**.
+### H1 higher timeframes (E0001–E0008): 0 of 8 pass
+
+| Variant | Symbol | Trades | Expectancy R | CI low | vs random (H4 swing) | Cost/trade R |
+|---|---|---|---|---|---|---|
+| trend_ema_pullback H4/D1 | XAUUSD | 9 | +0.245 | −0.712 | 93rd | 0.110 |
+| breakout_compression H4 | XAUUSD | 28 | −0.392 | −0.814 | 5th | 0.048 |
+| mean_reversion_bb H4 | XAUUSD | 4 | −0.228 | −1.003 | 19th | 0.019 |
+| structure_retest H4/D1 | XAUUSD | 61 | +0.139 | −0.212 | 83rd | 0.059 |
+| trend_ema_pullback H4/D1 | USOIL | 14 | −0.546 | −1.164 | 6th | 0.414 |
+| breakout_compression H4 | USOIL | 25 | −0.046 | −0.581 | 79th | 0.186 |
+| mean_reversion_bb H4 | USOIL | 6 | −0.672 | −1.400 | 0th | 0.255 |
+| structure_retest H4/D1 | USOIL | 58 | −0.302 | −0.666 | 31st | 0.142 |
+
+Cost per trade in R from the random baselines (100 seeds, train, same stop rule):
+
+| Symbol | M15 intraday | H1 swing | H4 swing |
+|---|---|---|---|
+| XAUUSD | 0.078 | 0.048 | 0.052 |
+| USOIL | 0.174 | 0.117 | 0.139 |
+
+The cost share falls from M15 to H1 but **not** from H1 to H4: stops are wider, but trades are held longer and pay more swap. Every H4/D1 variant has far fewer than 100 trades in 91 train weeks, so none can show an edge here; the two gold results above zero (9 and 61 trades) have CIs far below zero. By the pre-registered rule H1 is falsified. The Phase 3 ideas themselves were not tuned for H4/D1.
+
+### H2 swap asymmetry: answered by measurement
+
+Strategy experiments E0009–E0012 were withdrawn before running (train gold drift confounds direction tests). From the direction-matched H1 swing random baselines: **gold longs pay about 0.035 R per trade more than shorts** (0.066 vs 0.031 R), **oil shorts about 0.116 R more than longs** (0.176 vs 0.060 R). Swap asymmetry is real and large for oil shorts; it says nothing about an edge. For gold the +77% trend outweighs it on train.
+
+### H3 oil costs: supported
+
+Oil costs 0.117–0.174 R per trade depending on timeframe, 2–3× gold (0.048–0.078 R). A strategy needs a gross edge above that just to break even; every oil strategy so far (Phase 3, H1, H4) is below its random baseline's 95th percentile, and every oil expectancy is negative after costs. **Recommendation:** deprioritise oil M15; oil ideas only on H1+ with a strong reason, and preferably long side (no swap).

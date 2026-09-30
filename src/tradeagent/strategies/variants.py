@@ -27,6 +27,7 @@ from tradeagent.strategies.base import (
     Signal,
     Strategy,
     Style,
+    TradeEvent,
 )
 
 DirectionRule = Literal["both", "long", "short"]
@@ -153,6 +154,16 @@ class Variant:
             labels = regime_labels(out[decision])
             out[decision] = out[decision].assign(**{c: labels[c] for c in labels.columns})
         return out
+
+    def on_trade_opened(self, event: TradeEvent) -> None:
+        hook = getattr(self.inner, "on_trade_opened", None)
+        if hook is not None:
+            hook(event)
+
+    def on_trade_closed(self, event: TradeEvent) -> None:
+        hook = getattr(self.inner, "on_trade_closed", None)
+        if hook is not None:
+            hook(event)
 
     def in_regime(self, ctx: MarketContext) -> bool:
         view = ctx.bars(self.timeframes[0])

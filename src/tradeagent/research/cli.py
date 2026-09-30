@@ -209,3 +209,22 @@ def conclude_cmd(
     finally:
         conn.close()
     typer.echo(f"{hypothesis}: {status}")
+
+
+@research_app.command("withdraw")
+def withdraw_cmd(
+    experiment: Annotated[str, typer.Argument()],
+    reason: Annotated[str, typer.Option("--reason", help="Why it will not be run (required)")],
+) -> None:
+    """Withdraw a registered experiment before it runs (not counted as a test)."""
+    from tradeagent.research.experiments import ExperimentError, withdraw
+
+    cfg, conn = _db()
+    try:
+        withdraw(conn, cfg, experiment, reason)
+    except ExperimentError as exc:
+        typer.secho(f"Cannot withdraw: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+    finally:
+        conn.close()
+    typer.echo(f"{experiment}: withdrawn")

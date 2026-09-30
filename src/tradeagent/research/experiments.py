@@ -45,6 +45,9 @@ class Criterion(BaseModel):
     baseline_percentile_ge: float | None = Field(default=None, ge=0, le=100)
     stress_pass: bool = False  # still positive with spread and slippage x 1.5
     beats_experiment: str | None = None  # CI lower bound > that experiment's expectancy
+    # Compare with random trades of the SAME long/short mix: per seed, the long-only and
+    # short-only baselines weighted by this run's share of long and short trades.
+    baseline_mix: bool = False
 
 
 @dataclass(frozen=True)
@@ -166,7 +169,8 @@ def conclude(
     if not lesson.strip():
         raise ExperimentError("a conclusion needs a written lesson")
     last = conn.execute(
-        "SELECT experiment_id FROM experiments WHERE hypothesis_id = ? AND status = 'done' "
+        "SELECT experiment_id FROM experiments WHERE hypothesis_id = ? "
+        "AND status IN ('done', 'withdrawn') "
         "ORDER BY experiment_id DESC LIMIT 1",
         (hypothesis_id,),
     ).fetchone()
@@ -272,11 +276,17 @@ def run_experiment(
 
     # Everything the verdict needs is checked before the run, so a missing input
     # never costs a run on the counter.
-    base_path = distribution_path(
-        baselines_dir, symbol, strategy.timeframes[0], strategy.style, split, spec.direction
-    )
-    if criterion.baseline_percentile_ge is not None and not base_path.is_file():
-        raise ExperimentError(f"random baseline missing: {base_path.name} (run it first)")
+    tf, style = strategy.timeframes[0], strategy.style
+    if criterion.baseline_mix:
+        needed = [
+            distribution_path(baselines_dir, symbol, tf, style, split, side)
+            for side in ("long", "short")
+        ]
+    else:
+        needed = [distribution_path(baselines_dir, symbol, tf, style, split, spec.direction)]
+    missing = [p.name for p in needed if not p.is_file()]
+    if criterion.baseline_percentile_ge is not None and missing:
+        raise ExperimentError(f"random baseline missing: {', '.join(missing)} (run it first)")
     other = None
     if criterion.beats_experiment is not None:
         o = conn.execute(
@@ -313,8 +323,14 @@ def run_experiment(
         "run_number": rec.run["run_number"],
     }
     percentile = None
-    if base_path.is_file() and t["expectancy_r"] is not None:
-        base = pd.read_parquet(base_path)["expectancy_r"]
+    if not missing and t["expectancy_r"] is not None:
+        if criterion.baseline_mix:
+            long_share = float((rec.result.trades["direction"] == "long").mean())
+            base = mixed_baseline(needed[0], needed[1], long_share)
+            m["long_share"] = long_share
+        else:
+            base = pd.read_parquet(needed[0])["expectancy_r"]
+        m["baseline_mean"] = float(base.mean())
         percentile = baseline_percentile(float(t["expectancy_r"]), base)
     m["baseline_percentile"] = percentile
     checks = evaluate(criterion, m, percentile, other)
@@ -344,6 +360,35 @@ def run_experiment(
     )
     add_lesson(conn, cfg, experiment_id, text, {"metrics": m})
     return ExperimentResult(experiment_id, spec.name(), verdict, checks, rec)
+
+
+def withdraw(conn: sqlite3.Connection, cfg: AppConfig, experiment_id: str, reason: str) -> None:
+    """Withdraw a registered experiment without running it. It never ran, so it does not
+    count toward the multiple-testing total; the reason is kept as a lesson."""
+    if not reason.strip():
+        raise ExperimentError("withdrawing needs a written reason")
+    row = conn.execute(
+        "SELECT status FROM experiments WHERE experiment_id = ?", (experiment_id,)
+    ).fetchone()
+    if row is None:
+        raise ExperimentError(f"no experiment {experiment_id!r}")
+    if row[0] != "registered":
+        raise ExperimentError(f"{experiment_id} is {row[0]}; only registered ones can be withdrawn")
+    with conn:
+        conn.execute(
+            "UPDATE experiments SET status = 'withdrawn', verdict = 'withdrawn', "
+            "metrics_json = ? WHERE experiment_id = ?",
+            (json.dumps({"metrics": {}, "withdrawn_reason": reason}), experiment_id),
+        )
+    add_lesson(conn, cfg, experiment_id, f"{experiment_id} withdrawn (not run): {reason}", {})
+
+
+def mixed_baseline(long_path: Path, short_path: Path, long_share: float) -> pd.Series:
+    """Per seed: long_share x long-only expectancy + (1 - long_share) x short-only."""
+    longs = pd.read_parquet(long_path).set_index("seed")["expectancy_r"]
+    shorts = pd.read_parquet(short_path).set_index("seed")["expectancy_r"]
+    seeds = longs.index.intersection(shorts.index)
+    return long_share * longs[seeds] + (1 - long_share) * shorts[seeds]
 
 
 def research_run_total(conn: sqlite3.Connection) -> int:

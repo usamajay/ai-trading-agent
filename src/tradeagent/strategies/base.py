@@ -69,6 +69,11 @@ class Signal:
     stop:   buy above / sell below the current price, at `entry_price` or worse.
     limit/stop orders are cancelled if unfilled after `expiry_bars` decision bars.
     `max_hold_bars` (optional) closes the trade after that many bars.
+    `stop_moves` (optional): (trigger, new_stop) pairs in order; once the exit-side
+    price reaches `trigger`, the stop moves to `new_stop` (e.g. breakeven after 1R).
+    The engine settles them on M5 bars; stops only tighten. 1R stays the first stop.
+    `exit_by` (optional): close at the first bar that opens at or after this time.
+    `tag` (optional): a label handed back to the strategy's trade hooks.
     """
 
     symbol: str
@@ -80,6 +85,9 @@ class Signal:
     entry_price: float | None = None
     expiry_bars: int | None = None
     max_hold_bars: int | None = None
+    stop_moves: tuple[tuple[float, float], ...] = ()
+    exit_by: pd.Timestamp | None = None
+    tag: str = ""
 
     def __post_init__(self) -> None:
         if not self.why.strip():
@@ -117,6 +125,18 @@ class Signal:
             raise InvalidSignal(f"{self.direction}: stop-loss must be {side} the take-profit")
         if self.entry_price is not None and not low < self.entry_price < high:
             raise InvalidSignal("entry_price must lie between stop-loss and take-profit")
+        long = self.direction == "long"
+        stop = self.stop_loss
+        for trigger, new_stop in self.stop_moves:
+            if not all(np.isfinite(x) and x > 0 for x in (trigger, new_stop)):
+                raise InvalidSignal("stop moves need positive prices")
+            tightens = new_stop > stop if long else new_stop < stop
+            below_trigger = new_stop < trigger if long else new_stop > trigger
+            if not (tightens and below_trigger):
+                raise InvalidSignal(
+                    "each stop move must tighten the stop and stay behind its trigger"
+                )
+            stop = new_stop
 
     def entry_side_error(self, price: float) -> str | None:
         """Why this pending order is on the wrong side of the current price, or None.
@@ -140,6 +160,23 @@ class Signal:
         where = "below" if (self.order_type == "limit") == buy else "above"
         side = "buy" if buy else "sell"
         return f"{side} {self.order_type} at {self.entry_price} must be {where} price {price}"
+
+
+@dataclass(frozen=True)
+class TradeEvent:
+    """What the engine tells a strategy about its own trade (optional hooks
+    `on_trade_opened(event)` / `on_trade_closed(event)`), at the time it happens."""
+
+    direction: Direction
+    tag: str
+    entry_time: pd.Timestamp
+    entry_price: float
+    stop_loss: float  # the first stop (1R)
+    exit_time: pd.Timestamp | None = None
+    exit_price: float | None = None
+    exit_reason: str | None = None
+    net_pnl: float | None = None
+    stop_stage: int = 0  # how many stop moves had happened
 
 
 # --- what a strategy may see ---------------------------------------------------------

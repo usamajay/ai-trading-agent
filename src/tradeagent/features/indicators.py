@@ -163,6 +163,55 @@ def average_volume(bars: pd.DataFrame, period: int = 20) -> pd.Series:
     return bars["tick_volume"].astype(float).rolling(period).mean()
 
 
+# --- MetaTrader 5 built-in versions (for porting MQL5 EAs faithfully) -----------------
+
+
+def atr_mt5(bars: pd.DataFrame, period: int = 14) -> pd.Series:
+    """MT5 `iATR`: the simple average of the last `period` true ranges (not Wilder)."""
+    _check(period)
+    return true_range(bars).rolling(period).mean().rename(f"atr_mt5_{period}")
+
+
+def adx_mt5(bars: pd.DataFrame, period: int = 14) -> pd.Series:
+    """MT5 `iADX` (MetaQuotes ADX.mq5), which differs from Wilder's ADX:
+
+    per bar: +DM = high - previous high, -DM = previous low - low (negatives -> 0,
+    the smaller of the two -> 0, both 0 when equal); TR = max(high, previous close)
+    - min(low, previous close); +di = 100 * +DM / TR (0 when TR = 0), same for -di.
+    +DI and -DI are EMAs (alpha 2 / (period + 1)) of +di/-di; DX = 100 * |+DI - -DI| /
+    (+DI + -DI) (0 when the sum is 0); ADX = EMA of DX. The EMAs start from 0 at the
+    first bar, as in MT5, so the first ~3 x period values are still warming up.
+    """
+    _check(period)
+    high, low = bars["high"].to_numpy(float), bars["low"].to_numpy(float)
+    close = bars["close"].to_numpy(float)
+    n = len(high)
+    out = np.full(n, np.nan)
+    if n < 2:
+        return pd.Series(out, index=bars.index, name=f"adx_mt5_{period}")
+    k = 2.0 / (period + 1)
+    pdi = ndi = adx_v = 0.0
+    out[0] = 0.0
+    for i in range(1, n):
+        up, down = high[i] - high[i - 1], low[i - 1] - low[i]
+        up, down = max(up, 0.0), max(down, 0.0)
+        if up > down:
+            down = 0.0
+        elif up < down:
+            up = 0.0
+        else:
+            up = down = 0.0
+        tr = max(high[i], close[i - 1]) - min(low[i], close[i - 1])
+        p_raw, n_raw = (100 * up / tr, 100 * down / tr) if tr != 0 else (0.0, 0.0)
+        pdi = p_raw * k + pdi * (1 - k)
+        ndi = n_raw * k + ndi * (1 - k)
+        total = pdi + ndi
+        dx = 100 * abs(pdi - ndi) / total if total != 0 else 0.0
+        adx_v = dx * k + adx_v * (1 - k)
+        out[i] = adx_v
+    return pd.Series(out, index=bars.index, name=f"adx_mt5_{period}")
+
+
 def _check(period: int) -> None:
     if period < 1:
         raise ValueError(f"period must be >= 1, got {period}")

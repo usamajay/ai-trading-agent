@@ -21,6 +21,7 @@ BUILTIN_MODULES: tuple[str, ...] = (
     "tradeagent.strategies.mean_reversion_bb",
     "tradeagent.strategies.session_breakout",
     "tradeagent.strategies.structure_retest",
+    "tradeagent.strategies.goldsr",
 )
 
 

@@ -18,6 +18,14 @@ How one run works, bar by bar on the strategy's decision timeframe:
 Fills: bars are bid prices; `CostModel` turns them into ask/bid sides, adds the
 spread margin and slippage. A bar that opens beyond the stop fills at that open
 (the loss can exceed 1R). Take-profits fill at their price, never better.
+Stop moves (`Signal.stop_moves`, e.g. breakeven at 1R) are settled on the same
+execution bars: exits are checked first with the current stop; if the bar then
+reached a trigger, the stop moves, and if the same bar also reached the new stop
+the trade is closed there (the pessimistic order, counted as tie
+"move_same_bar"). `Signal.exit_by` closes a trade at the open of the first bar at
+or after that time (exit reason "exit_by"). A strategy with `on_trade_opened` /
+`on_trade_closed` methods is told about its fills and exits as they happen.
+
 A trade still open when an excluded bar (data hole) is reached is closed at the
 close of the last bar before the hole (exit side + slippage), exit reason
 "data_gap"; it stays in the results. Nothing here places orders: it is a
@@ -45,6 +53,7 @@ from tradeagent.strategies.base import (
     InvalidSignal,
     Signal,
     Strategy,
+    TradeEvent,
     check_strategy,
 )
 
@@ -64,7 +73,7 @@ TRADE_COLUMNS = [
     "lots",
     "stop_loss",
     "take_profit",
-    "exit_reason",  # tp, sl, sl_gap, weekend_close, time, end_of_data, data_gap
+    "exit_reason",  # tp, sl, sl_gap, weekend_close, exit_by, time, end_of_data, data_gap
     "gross_pnl",  # price P&L incl. spread and slippage, before swap/commission
     "spread_cost",
     "slippage_cost",
@@ -73,7 +82,8 @@ TRADE_COLUMNS = [
     "net_pnl",
     "risk_usd",  # 1R: the planned loss if the stop fills exactly
     "r_multiple",
-    "tie",  # none, m5 (settled by M5 bars), sl_first, fill_bar
+    "stop_stage",  # stop moves done before the exit (0 = first stop)
+    "tie",  # none, m5 (settled by M5 bars), sl_first, fill_bar, move_same_bar
     "m1_check",  # info only: sl / tp / same_m1_bar / no_m1 / "" (no tie)
     "held_over_weekend",
     "min_balance",  # account needed to take it at the minimum lot and the risk %
@@ -146,6 +156,8 @@ class _Position:
     entry_bar: int
     spread_cost: float
     slippage_cost: float
+    stop: float = 0.0  # current stop (moves with Signal.stop_moves)
+    stage: int = 0  # stop moves done
 
 
 @dataclass
@@ -271,6 +283,17 @@ class _Run:
             self.order = None
 
     def _process_bar(self, b: _Bars, j: int, i: int) -> None:
+        pending = self.position.order if self.position is not None else self.order
+        exit_by = pending.signal.exit_by if pending is not None else None
+        if exit_by is not None and b.time[j] >= exit_by:
+            if self.position is not None:
+                p = self.position
+                price = self.costs.exit_side(p.order.signal.direction, b.open[j], b.spread[j])
+                self._close(price, "exit_by", b, j, i, slip=True)
+            else:
+                self.counts["cancelled_exit_by"] += 1
+                self.order = None
+            return
         if b.flatten[j]:
             if self.position is not None:
                 p = self.position
@@ -327,16 +350,22 @@ class _Run:
             entry_bar=i,
             spread_cost=spread_cost,
             slippage_cost=abs(filled - price) * value,
+            stop=sig.stop_loss,
         )
         self.order = None
         self.counts["filled"] += 1
+        self._notify(
+            "on_trade_opened",
+            TradeEvent(d, sig.tag, b.time[j], filled, sig.stop_loss),
+        )
         return kind
 
     def _check_exit(self, b: _Bars, j: int, i: int, fill: str | None) -> None:
-        assert self.position is not None
-        sig = self.position.order.signal
+        p = self.position
+        assert p is not None
+        sig = p.order.signal
         d, sp, c = sig.direction, b.spread[j], self.costs
-        sl, tp = sig.stop_loss, sig.take_profit
+        sl, tp = p.stop, sig.take_profit
         long = d == "long"
         if fill is None:  # the position was already open when this bar opened
             at_open = c.exit_side(d, b.open[j], sp)
@@ -359,6 +388,25 @@ class _Run:
             self._close(sl, "sl", b, j, i, slip=True, tie="sl_first" if tp_hit else "none")
         elif tp_hit:
             self._close(tp, "tp", b, j, i, slip=False)
+        else:
+            self._move_stop(b, j, i, high, low)
+
+    def _move_stop(self, b: _Bars, j: int, i: int, high: float, low: float) -> None:
+        """Apply stop moves whose trigger this bar reached; close if it also hit the new stop."""
+        p = self.position
+        assert p is not None
+        moves = p.order.signal.stop_moves
+        long = p.order.signal.direction == "long"
+        moved = False
+        while p.stage < len(moves):
+            trigger, new_stop = moves[p.stage]
+            if not (high >= trigger if long else low <= trigger):
+                break
+            p.stop = max(p.stop, new_stop) if long else min(p.stop, new_stop)
+            p.stage += 1
+            moved = True
+        if moved and (low <= p.stop if long else high >= p.stop):
+            self._close(p.stop, "sl", b, j, i, slip=True, tie="move_same_bar")
 
     def _close_at_bar_close(self, i: int, reason: str) -> None:
         assert self.position is not None
@@ -392,7 +440,7 @@ class _Run:
             dec = self.decision
             high, low = c.exit_range(d, dec.high[i], dec.low[i], dec.spread[i])
             long = d == "long"
-            both = (low <= sig.stop_loss if long else high >= sig.stop_loss) and (
+            both = (low <= p.stop if long else high >= p.stop) and (
                 high >= sig.take_profit if long else low <= sig.take_profit
             )
             if both:
@@ -441,6 +489,7 @@ class _Run:
                 "net_pnl": net,
                 "risk_usd": risk_usd,
                 "r_multiple": net / risk_usd if risk_usd > 0 else float("nan"),
+                "stop_stage": p.stage,
                 "tie": tie,
                 "m1_check": m1,
                 "held_over_weekend": held_over_weekend(p.entry_time, exit_time),
@@ -450,6 +499,26 @@ class _Run:
             }
         )
         self.position = None
+        self._notify(
+            "on_trade_closed",
+            TradeEvent(
+                d,
+                sig.tag,
+                p.entry_time,
+                p.entry_price,
+                sig.stop_loss,
+                exit_time,
+                exit_price,
+                reason,
+                net,
+                p.stage,
+            ),
+        )
+
+    def _notify(self, hook: str, event: TradeEvent) -> None:
+        method = getattr(self.strategy, hook, None)
+        if method is not None:
+            method(event)
 
     def _m1_check(self, p: _Position, i: int) -> str:
         """Info only: which level M1 bars say was touched first inside decision bar i."""
@@ -465,7 +534,7 @@ class _Run:
         long = sig.direction == "long"
         for k in range(lo, hi):
             high, low = self.costs.exit_range(sig.direction, m1.high[k], m1.low[k], m1.spread[k])
-            sl_hit = low <= sig.stop_loss if long else high >= sig.stop_loss
+            sl_hit = low <= p.stop if long else high >= p.stop
             tp_hit = high >= sig.take_profit if long else low <= sig.take_profit
             if sl_hit and tp_hit:
                 return "same_m1_bar"

@@ -164,6 +164,17 @@ def _group_table(groups: dict[str, dict[str, Any]], heading: str) -> list[str]:
     return [*lines, ""]
 
 
+def _exit_stage_table(groups: dict[str, dict[str, Any]]) -> list[str]:
+    """R distribution by how trades ended; shown only when stops were moved."""
+    if not any(k.startswith("stop after move") for k in groups):
+        return []
+    return [
+        "How trades ended (stop moves such as breakeven; mean R per group):",
+        "",
+        *_group_table(groups, "Exit"),
+    ]
+
+
 def _regime_tables(by_regime: dict[str, Any] | None) -> list[str]:
     if not by_regime:
         return ["Per regime: not computed for this run.", ""]
@@ -342,6 +353,7 @@ def report_markdown(
         "## Breakdowns",
         "",
         *_group_table(metrics.get("by_direction", {}), "Direction"),
+        *_exit_stage_table(metrics.get("by_exit_stage", {})),
         *_group_table(metrics["by_session"], "Session"),
         *_group_table(metrics["by_year"], "Year"),
         *_group_table(metrics["by_weekend_hold"], "Weekend"),

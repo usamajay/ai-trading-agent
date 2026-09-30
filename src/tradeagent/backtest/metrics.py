@@ -244,6 +244,29 @@ def direction_breakdown(trades: pd.DataFrame) -> dict[str, dict[str, Any]]:
     return out
 
 
+EXIT_STAGES = ("target", "first stop", "stop after move 1", "stop after move 2")
+
+
+def exit_stage(trades: pd.DataFrame) -> pd.Series:
+    """How each trade ended, counting stop moves: target / stop at stage 0, 1, 2 / other."""
+    reason = trades["exit_reason"]
+    stage = trades["stop_stage"] if "stop_stage" in trades else pd.Series(0, index=trades.index)
+    stopped = reason.isin(["sl", "sl_gap"])
+    return pd.Series(
+        np.select(
+            [
+                reason == "tp",
+                stopped & (stage == 0),
+                stopped & (stage == 1),
+                stopped & (stage >= 2),
+            ],
+            list(EXIT_STAGES),
+            reason.astype(str),
+        ),
+        index=trades.index,
+    )
+
+
 def regime_breakdown(trades: pd.DataFrame, bars: pd.DataFrame, timeframe: str) -> dict[str, Any]:
     """Trade stats by the research regime labels of each signal's decision bar."""
     from tradeagent.features.regime import DETECTOR_VERSION, trade_regimes
@@ -325,6 +348,7 @@ def compute_metrics(result: BacktestResult) -> dict[str, Any]:
         if len(trades)
         else {},
         "by_direction": direction_breakdown(trades) if len(trades) else {},
+        "by_exit_stage": breakdown(trades, exit_stage(trades)) if len(trades) else {},
         "by_exit_reason": {str(k): int(v) for k, v in trades["exit_reason"].value_counts().items()},
         "by_regime": None,  # needs the regime detector (Phase 8)
         "counts": dict(sorted(result.counts.items())),

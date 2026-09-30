@@ -24,6 +24,7 @@ from tradeagent.research.experiments import (
     research_run_total,
     run_experiment,
     set_hypothesis_status,
+    withdraw,
 )
 from tradeagent.research.guard import SplitGuardError
 from tradeagent.strategies.variants import VariantSpec
@@ -199,3 +200,74 @@ def test_inputs_are_checked_before_the_run(
     assert pct["baseline_percentile"] is not None and first.checks[-1].name == "vs_random_pct"
     second = _run(conn, cfg, store, needs_other, tmp_path)
     assert second.checks[-1].name == f"beats {needs_base}"
+
+
+def test_withdraw(
+    conn: sqlite3.Connection, cfg: AppConfig, store: BarStore, tmp_path: Path
+) -> None:
+    _hyp(conn, cfg)
+    eid = register(conn, cfg, "H1", PLAIN, "XAUUSD", "train", EASY)
+    with pytest.raises(ExperimentError, match="written reason"):
+        withdraw(conn, cfg, eid, " ")
+    with pytest.raises(ExperimentError, match="no experiment"):
+        withdraw(conn, cfg, "E0404", "x")
+    withdraw(conn, cfg, eid, "confounded by drift")
+    row = list_experiments(conn).iloc[0]
+    assert row["status"] == "withdrawn" and research_run_total(conn) == 0
+    assert "confounded by drift" in json.loads(row["metrics_json"])["withdrawn_reason"]
+    with pytest.raises(ExperimentError, match="only registered"):
+        withdraw(conn, cfg, eid, "again")
+    with pytest.raises(ExperimentError, match="run once"):
+        _run(conn, cfg, store, eid, tmp_path)
+    conclude(conn, cfg, "H1", "inconclusive", "answered by measurement instead")
+    assert _status(conn, "H1") == "inconclusive"
+
+
+def test_mixed_baseline_weights_long_and_short_per_seed(tmp_path: Path) -> None:
+    from tradeagent.research.experiments import mixed_baseline
+
+    lp, sp = tmp_path / "l.parquet", tmp_path / "s.parquet"
+    pd.DataFrame({"seed": [1, 2, 3], "expectancy_r": [0.3, 0.1, 0.2]}).to_parquet(lp)
+    pd.DataFrame({"seed": [2, 3, 4], "expectancy_r": [-0.1, -0.3, 9.0]}).to_parquet(sp)
+    mix = mixed_baseline(lp, sp, 0.75)
+    assert mix.to_dict() == pytest.approx({2: 0.05, 3: 0.075})  # seeds in both only
+
+
+def test_baseline_mix_criterion(
+    conn: sqlite3.Connection, cfg: AppConfig, store: BarStore, tmp_path: Path
+) -> None:
+    _hyp(conn, cfg)
+    crit = Criterion(baseline_percentile_ge=95, baseline_mix=True)
+    eid = register(conn, cfg, "H1", PLAIN, "XAUUSD", "train", crit)
+    with pytest.raises(ExperimentError, match="_long.parquet, XAUUSD_M15_intraday_train_short"):
+        _run(conn, cfg, store, eid, tmp_path)
+    for side, e in (("long", 0.1), ("short", -0.2)):
+        path = distribution_path(tmp_path / "base", "XAUUSD", "M15", "intraday", "train", side)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame({"seed": [1, 2], "expectancy_r": [e, e]}).to_parquet(path)
+    res = _run(conn, cfg, store, eid, tmp_path)
+    m = json.loads(list_experiments(conn).iloc[0]["metrics_json"])["metrics"]
+    share = float((res.record.result.trades["direction"] == "long").mean())
+    assert m["long_share"] == pytest.approx(share)
+    assert m["baseline_mean"] == pytest.approx(share * 0.1 - (1 - share) * 0.2)
+
+
+def test_exit_stage_labels_and_report_table() -> None:
+    from tradeagent.backtest.metrics import exit_stage
+    from tradeagent.backtest.report import _exit_stage_table
+
+    trades = pd.DataFrame(
+        {
+            "exit_reason": ["tp", "sl", "sl_gap", "sl", "exit_by"],
+            "stop_stage": [2, 0, 1, 2, 1],
+        }
+    )
+    assert exit_stage(trades).tolist() == [
+        "target",
+        "first stop",
+        "stop after move 1",
+        "stop after move 2",
+        "exit_by",
+    ]
+    assert exit_stage(trades.drop(columns="stop_stage")).iloc[2] == "first stop"
+    assert _exit_stage_table({"target": {}}) == []  # no stop moves: no table
