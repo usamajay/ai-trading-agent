@@ -164,6 +164,20 @@ def _group_table(groups: dict[str, dict[str, Any]], heading: str) -> list[str]:
     return [*lines, ""]
 
 
+def _regime_tables(by_regime: dict[str, Any] | None) -> list[str]:
+    if not by_regime:
+        return ["Per regime: not computed for this run.", ""]
+    return [
+        (
+            f"Regimes: research labeller `{by_regime['detector_version']}` "
+            "(features/regime.py), label of each signal's decision bar."
+        ),
+        "",
+        *_group_table(by_regime["trend"], "Trend regime"),
+        *_group_table(by_regime["vol"], "Volatility regime"),
+    ]
+
+
 def report_markdown(
     run: dict[str, Any],
     metrics: dict[str, Any],
@@ -331,8 +345,7 @@ def report_markdown(
         *_group_table(metrics["by_session"], "Session"),
         *_group_table(metrics["by_year"], "Year"),
         *_group_table(metrics["by_weekend_hold"], "Weekend"),
-        "Per regime: not available until the regime detector (Phase 8).",
-        "",
+        *_regime_tables(metrics.get("by_regime")),
         "## Exits, ties and engine counts",
         "",
         "Exit reasons: "

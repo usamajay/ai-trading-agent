@@ -244,6 +244,20 @@ def direction_breakdown(trades: pd.DataFrame) -> dict[str, dict[str, Any]]:
     return out
 
 
+def regime_breakdown(trades: pd.DataFrame, bars: pd.DataFrame, timeframe: str) -> dict[str, Any]:
+    """Trade stats by the research regime labels of each signal's decision bar."""
+    from tradeagent.features.regime import DETECTOR_VERSION, trade_regimes
+
+    if not len(trades):
+        return {"detector_version": DETECTOR_VERSION, "trend": {}, "vol": {}}
+    labels = trade_regimes(trades, bars, timeframe)
+    return {
+        "detector_version": DETECTOR_VERSION,
+        "trend": breakdown(trades, labels["trend"]),
+        "vol": breakdown(trades, labels["vol"]),
+    }
+
+
 def min_balance_summary(result: BacktestResult) -> dict[str, float | int | None]:
     values = result.trades["min_balance"]
     return {

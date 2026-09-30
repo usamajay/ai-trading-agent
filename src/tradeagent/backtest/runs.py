@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from tradeagent.backtest.engine import BacktestResult
-from tradeagent.backtest.metrics import compute_metrics
+from tradeagent.backtest.metrics import compute_metrics, regime_breakdown
 from tradeagent.backtest.records import next_run_number, run_counts, save_run, to_json
 from tradeagent.backtest.report import write_outputs
 from tradeagent.backtest.risk_flags import risk_limit_flags
@@ -69,6 +69,9 @@ def execute_run(
         enforce_account_limits=enforce,
     )
     metrics = compute_metrics(result)
+    metrics["by_regime"] = regime_breakdown(
+        result.trades, inputs.dataset.bars, inputs.dataset.timeframe
+    )
     stress_metrics = compute_metrics(stress_result)
     flags = risk_limit_flags(result.daily, result.start_balance, cfg.risk)
 
