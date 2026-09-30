@@ -58,4 +58,8 @@ uv run tradeagent backtest list         # past runs (run counter, stress PASS/FA
 uv run tradeagent backtest lookahead-check --strategy NAME  # truncation test on real data
 uv run tradeagent backtest baseline --symbol XAUUSD --seeds 100  # random-baseline distribution (~10 min); --timeframe H1 --style swing
 uv run tradeagent backtest compare      # latest strategy runs vs random baseline, with verdicts
+uv run tradeagent risk status           # limits in force, kill switch, stops
+uv run tradeagent kill --reason "..."   # kill switch (--status, --clear --reason "...")
+uv run tradeagent news fetch            # this week's high-impact USD events (news show to view)
+uv run pytest tests/test_risk.py --cov=tradeagent.risk --cov-branch --cov-fail-under=100  # risk coverage gate
 ```

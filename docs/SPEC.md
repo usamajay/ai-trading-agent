@@ -268,6 +268,14 @@ A 60% win rate is a **research benchmark, not a target**. Strategies are ranked 
 
 Position size = `(equity × risk%) / (SL distance × value per point per lot)`, rounded **down** to broker lot step; if < min lot → reject.
 
+### 6.2 How the rules are applied (built in Phase 4, `src/tradeagent/risk/`)
+- A decision lists **every** failed rule with a reason code (`kill_switch`, `shutdown`, `daily_loss`, `weekly_loss`, `loss_streak`, `no_stop`, `sl_atr`, `rr`, `spread`, `news`, `news_unknown`, `max_positions`, `correlation`, `min_lot`); a token is issued only when none fails.
+- **Daily loss** is measured from the equity at the start of the UTC day and stops new trades until 00:00 UTC; **weekly loss** from the start of the trading week (the Sunday evening open) until the next week; the **drawdown shutdown** holds until a human restart with a written reason, which resets the peak to the current equity. Stops hold for their period even if equity recovers.
+- **Tokens:** HMAC-SHA256 over order id, symbol, side, lots and stop-loss, with a per-process secret; they expire after 60 s and are single use. `execution/paper.py` verifies every field.
+- **News blackout:** high-impact USD events ±30 min. Live: a weekly feed (`tradeagent news fetch`); if this week's calendar is missing, entries are blocked (`news_unknown`). Backtests: official FOMC, jobs-report and CPI dates in `config/news/usd_high_impact_history.csv` (GDP, PCE, ISM and retail sales not included: known limitation).
+- **Kill switch:** `tradeagent kill --reason ...` creates `KILL`; clearing needs `--clear --reason ...`; both are logged to `risk_events`.
+- **Backtests** apply the trade-level rules and the news blackout; account-level limits are reported as flags unless `--enforce-account-limits` is given (paper and live always enforce everything).
+
 ---
 
 ## 7. Backtesting & validation

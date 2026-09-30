@@ -19,7 +19,7 @@ An autonomous, probabilistic, risk-controlled trading **research and paper-tradi
 | 1 | Market data + database | ✅ done |
 | 2 | Backtesting framework | ✅ done |
 | 3 | Strategy engine | ✅ done |
-| 4 | Risk engine | ⏳ in progress |
+| 4 | Risk engine | ✅ done |
 | 5 | Probability / EV engine | ⬜ |
 | 6 | Hypothesis generation | ⬜ |
 | 7 | Walk-forward + OOS | ⬜ |
@@ -61,6 +61,14 @@ All commands are for **Windows PowerShell**, run from the project folder.
 | `uv run tradeagent data watch` | Keeps M1/M5 up to date live, every 10 s. Stop with **Ctrl+C**. `--minutes 60` stops by itself |
 | `uv run tradeagent data ping` | Shows the account type, balance and latest prices |
 | `uv run tradeagent --help` | Lists all commands |
+
+### Risk and news commands (Phase 4)
+| Command | What it does |
+|---|---|
+| `uv run tradeagent risk status` | Shows the limits from `config/risk.yaml`, the kill switch and any stops in force |
+| `uv run tradeagent kill --reason "..."` | **Kill switch**: stops all trading at once (creates the `KILL` file). `--status` shows it; `--clear --reason "..."` removes it |
+| `uv run tradeagent news fetch` | Downloads this week's high-impact USD events (run weekly; without it, live entries are blocked) |
+| `uv run tradeagent news show` | Upcoming events and whether a news blackout is active now |
 
 ### Backtesting commands (Phase 2)
 | Command | What it does |
