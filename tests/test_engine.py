@@ -663,3 +663,30 @@ def test_zero_cost_trades_add_up_to_the_equity_change() -> None:
 def test_held_over_weekend_helper() -> None:
     assert held_over_weekend(ny("2026-01-09 16:00"), ny("2026-01-11 18:30"))
     assert not held_over_weekend(ny("2026-01-05 10:00"), ny("2026-01-09 16:30"))
+
+
+def test_daily_mark_to_market_values_the_open_trade() -> None:
+    bars = frame(
+        [
+            ("2026-01-05 16:50", 2000, 2001, 1999, 2000.5),
+            ("2026-01-05 16:55", 2001, 2002, 2000.5, 2001.5),  # entry 2001; Monday closes
+            ("2026-01-05 18:00", 2002, 2003, 2001.5, 2002.5),  # Tuesday's trading day
+            ("2026-01-05 18:05", 2002.5, 2011.5, 2002, 2011),  # take-profit 2011
+            ("2026-01-05 18:10", 2011, 2012, 2010, 2011),
+        ]
+    )
+    result = run(Scripted({0: [LONG]}), bars)
+    t = only_trade(result)
+    daily = result.daily
+    assert [str(d) for d in daily["trading_day"]] == ["2026-01-05", "2026-01-06"]
+    monday = daily.iloc[0]
+    # Open at Monday's 17:00 close: +0.5 x 10,000 points/$... = 0.5/0.001 x $0.1 x 0.09 = $4.50;
+    # no swap yet (the 17:00 rollover is not strictly before the 17:00 mark).
+    assert monday["time_utc"] == ny("2026-01-05 17:00")
+    assert monday["equity"] == pytest.approx(10_004.5)
+    assert monday["closed_equity"] == 10_000
+    # Tuesday (last day): the trade has closed, so both equal the final balance.
+    tuesday = daily.iloc[1]
+    assert tuesday["equity"] == pytest.approx(result.final_balance)
+    assert tuesday["closed_equity"] == pytest.approx(10_000 + t["net_pnl"])
+    assert result.bars_in_split == 5

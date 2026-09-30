@@ -292,6 +292,18 @@ Position size = `(equity × risk%) / (SL distance × value per point per lot)`, 
 ### 7.3 Metrics reported for every run
 Win rate, profit factor, expectancy (R and $), average trade, Sharpe, Sortino, Calmar, max drawdown (% and duration), recovery factor, number of trades, longest losing streak, exposure time, results per regime, per session, per year.
 
+Definitions (code: `src/tradeagent/backtest/metrics.py`):
+- **Trade stats** use net P&L (after spread, slippage, swap, commission). Win = net P&L > 0. Profit factor = sum of winning net P&L ÷ |sum of losing net P&L| (∞ with no losses). Expectancy (R) = mean R multiple (1R = planned loss if the stop fills exactly); expectancy ($) = mean net P&L per trade.
+- **Insufficient sample:** any result (or breakdown group) with fewer than **30 trades** is flagged "insufficient sample".
+- **95% confidence intervals** for win rate, expectancy (R) and profit factor: trade bootstrap, 2,000 resamples with replacement, fixed seed, 2.5th–97.5th percentiles without interpolation (an upper profit-factor bound may be ∞).
+- **Equity curve:** **daily mark-to-market** equity, one value per trading day (17:00 → 17:00 New York) at its last bar's close; an open trade is valued on its exit side (bid for longs, ask for shorts) plus swap so far, less commission. Closed-trade equity is also kept.
+- **Max drawdown:** largest fall from the running peak (starting balance included), in % of that peak and in $, on the daily mark-to-market equity; **closed-trade drawdown** is reported alongside for comparison (it can be larger, since daily marks miss intraday lows at trade closes, or smaller, since it misses open-trade dips). **Duration:** most trading days from a peak until equity is back at or above it (or to the end if never recovered).
+- **Returns and annualisation (one fixed convention):** daily return = equity_d ÷ equity_(d−1) − 1 (first day vs the starting balance), over every trading day in the test including flat days; **252 trading days per year, risk-free rate 0**. Sharpe = mean ÷ sample std (ddof 1) × √252. Sortino = mean ÷ downside deviation × √252, downside deviation = √(mean(min(r, 0)²)) over all days. CAGR = (final ÷ start)^(252 ÷ trading days) − 1. Calmar = CAGR ÷ max drawdown (mark-to-market). Recovery factor = net profit ÷ max drawdown $.
+- **Costs as % of gross profit:** gross profit = sum over trades of max(pre-cost P&L, 0), pre-cost P&L = gross P&L + spread cost + slippage cost. Spread, slippage, swap paid and commission are each shown as % of it, plus the total; also average cost per trade in R.
+- **Exposure** = decision bars with a trade open ÷ decision bars in the split.
+- **Sessions** by entry time, New York: Asia 18:00–03:00, London 03:00–08:00, New York 08:00–17:00. Also per year (entry year, UTC), weekend-held vs not, exit reasons. Per regime: empty until the regime detector exists (Phase 8).
+- **Minimum balance** (per trade: stop distance × value per point at the minimum lot ÷ risk %): largest, 95th percentile, median; plus signals rejected because the size was below the minimum lot.
+
 ### 7.4 Robustness checks (candidate must pass all)
 - ≥ 200 trades in train+validation; ≥ 50 in OOS.
 - OOS profit factor ≥ 1.2 and OOS expectancy > 0 after costs.

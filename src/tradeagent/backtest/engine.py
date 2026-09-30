@@ -35,7 +35,7 @@ from tradeagent.backtest.costs import CostModel
 from tradeagent.backtest.dataset import Dataset
 from tradeagent.backtest.risk_basics import check_signal, min_balance, position_size
 from tradeagent.config import BacktestSettings, RiskLimits
-from tradeagent.data.market_hours import NEW_YORK
+from tradeagent.data.market_hours import NEW_YORK, trading_day
 from tradeagent.data.mt5_client import TIMEFRAMES
 from tradeagent.features.indicators import atr
 from tradeagent.strategies.base import (
@@ -89,6 +89,12 @@ class BacktestResult:
     trades: pd.DataFrame  # TRADE_COLUMNS
     equity: pd.DataFrame  # time_utc, equity (after each closed trade)
     counts: dict[str, int]  # rejections, skips, cancellations, tie resolutions
+    # One row per trading day (17:00 -> 17:00 New York) at its last bar's close:
+    # trading_day, time_utc, equity (mark-to-market: closed P&L + open trade valued
+    # at that close on its exit side, with swap so far, less commission) and
+    # closed_equity (closed trades only).
+    daily: pd.DataFrame
+    bars_in_split: int  # decision bars in the split (for exposure time)
 
 
 class _Bars:
@@ -113,6 +119,7 @@ class _Bars:
         self.after_reopen = _flag(df, "after_reopen", False)
         self.flatten = _flag(df, "flatten", False)
         self.partial = _flag(df, "partial", False)
+        self.day = list(trading_day(start)) if self.n else []
 
 
 def _flag(df: pd.DataFrame, name: str, default: bool) -> np.ndarray:
@@ -164,6 +171,7 @@ class _Run:
     # Last execution bar processed (bars, index, decision index): where a trade is
     # closed when the next bar turns out to be the far side of a data hole.
     last_bar: tuple[_Bars, int, int] | None = None
+    daily: list[tuple[object, pd.Timestamp, float, float]] = field(default_factory=list)
 
     # --- main loop -----------------------------------------------------------------
 
@@ -177,15 +185,31 @@ class _Run:
                 if limit is not None and i - self.position.entry_bar + 1 >= limit:
                     self._close_at_bar_close(i, "time")
             last = i == d.n - 1 or not d.in_split[i + 1]
-            if last:
-                if d.in_split[i]:
-                    if self.position is not None:
-                        self._close_at_bar_close(i, "end_of_data")
-                    if self.order is not None:
-                        self.counts["cancelled_end_of_data"] += 1
-                        self.order = None
-                continue
-            self._decide(i)
+            if last and d.in_split[i]:
+                if self.position is not None:
+                    self._close_at_bar_close(i, "end_of_data")
+                if self.order is not None:
+                    self.counts["cancelled_end_of_data"] += 1
+                    self.order = None
+            if d.in_split[i] and (last or d.day[i + 1] != d.day[i]):
+                self._mark_to_market(i)
+            if not last:
+                self._decide(i)
+
+    def _mark_to_market(self, i: int) -> None:
+        """Record the account value at the close of the trading day's last bar."""
+        d = self.decision
+        value = self.equity
+        p = self.position
+        if p is not None:
+            sig, c, lots = p.order.signal, self.costs, p.order.lots
+            price = c.exit_side(sig.direction, d.close[i], d.spread[i])
+            value += (
+                c.pnl(sig.direction, p.entry_price, price, lots)
+                + c.swap(sig.direction, lots, p.entry_time, d.end[i])
+                - c.commission(lots)
+            )
+        self.daily.append((d.day[i], d.end[i], value, self.equity))
 
     # --- managing orders and positions ----------------------------------------------
 
@@ -602,4 +626,8 @@ def run_backtest(
         trades=trades,
         equity=equity,
         counts=dict(run.counts),
+        daily=pd.DataFrame(
+            run.daily, columns=["trading_day", "time_utc", "equity", "closed_equity"]
+        ),
+        bars_in_split=int(decision.in_split.sum()),
     )
