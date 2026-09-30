@@ -51,6 +51,7 @@ class FakeMT5:
         self.initialize_kwargs: dict[str, Any] | None = None
         self.shutdown_called = False
         self.ticks: list[Any] = []
+        self.tick_rows: Any = None
 
     def initialize(self, **kwargs: Any) -> bool:
         self.initialize_kwargs = kwargs
@@ -97,7 +98,17 @@ class FakeMT5:
             volume_max=200.0,
             volume_step=0.01,
             spread=0,
+            swap_mode=1,
+            swap_long=-560.0,
+            swap_short=0.0,
+            swap_rollover3days=3,
         )
+
+    COPY_TICKS_INFO = 2
+
+    def copy_ticks_range(self, symbol: str, start: datetime, end: datetime, flags: int) -> Any:
+        self.last_ticks_call = (symbol, start, end, flags)
+        return self.tick_rows
 
 
 CREDS = MT5Credentials(login=111, password="secret", server="Exness-MT5Trial15")
@@ -228,6 +239,29 @@ def test_symbol_info_uses_median_spread_when_live_spread_is_zero() -> None:
     assert spec.spread_points == 0
     assert spec.typical_spread_points == 200
     assert spec.volume_min == 0.01 and spec.volume_step == 0.01
+    assert (spec.swap_mode, spec.swap_long, spec.swap_short) == (1, -560.0, 0.0)
+    assert spec.swap_rollover3days == 3
+
+
+def test_get_ticks_returns_utc_millisecond_times() -> None:
+    fake = FakeMT5()
+    fake.tick_rows = np.array(
+        [(1767225600, 2000.2, 2000.0, 1767225600250), (1767225600, 2000.1, 1999.9, 1767225600100)],
+        dtype=[("time", "i8"), ("ask", "f8"), ("bid", "f8"), ("time_msc", "i8")],
+    )
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    with MT5Client(credentials=CREDS, mt5_module=fake) as client:
+        ticks = client.get_ticks("XAUUSDm", start, start + timedelta(minutes=1))
+        fake.tick_rows = None
+        with pytest.raises(MT5Error, match="copy_ticks_range"):
+            client.get_ticks("XAUUSDm", start, start + timedelta(minutes=1))
+    assert list(ticks.columns) == ["time_utc", "bid", "ask"]
+    assert str(ticks["time_utc"].dtype) == "datetime64[ns, UTC]"
+    assert ticks["time_utc"].tolist() == [
+        pd.Timestamp("2026-01-01 00:00:00.100", tz="UTC"),
+        pd.Timestamp("2026-01-01 00:00:00.250", tz="UTC"),
+    ]
+    assert fake.last_ticks_call[3] == FakeMT5.COPY_TICKS_INFO
 
 
 def test_last_tick_waits_for_first_tick() -> None:

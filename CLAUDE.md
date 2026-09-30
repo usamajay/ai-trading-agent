@@ -43,4 +43,6 @@ uv run tradeagent data validate # data quality report (saved to data_quality_log
 uv run tradeagent data watch    # live M1/M5 updater (Ctrl+C to stop; --minutes 60 for a timed run)
 uv run tradeagent data resample-check  # New York-close D1/H4 built from H1 vs broker bars
 uv run tradeagent backtest splits      # split dates (proposed/frozen), exclusions per split
+uv run tradeagent backtest costs       # cost snapshot in use (--snapshot refreshes it from MT5)
+uv run tradeagent backtest spread-check  # real tick spreads vs stored bar spreads (needs MT5)
 ```

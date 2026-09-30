@@ -513,6 +513,153 @@ def backtest_splits(
         typer.echo("After approval: uv run tradeagent backtest splits --freeze --approved-by Usama")
 
 
+@backtest_app.command("costs")
+def backtest_costs(
+    snapshot: Annotated[
+        bool,
+        typer.Option("--snapshot", help="Read costs from MT5 (demo) and save config/costs.yaml."),
+    ] = False,
+) -> None:
+    """Show the broker cost snapshot backtests use (contract size, $ per point, swaps)."""
+    from tradeagent.backtest.costs import CostModel, symbol_costs, write_snapshot
+    from tradeagent.config import (
+        COSTS_FILE,
+        DEFAULT_CONFIG_DIR,
+        ConfigError,
+        CostSnapshot,
+        load_config,
+    )
+    from tradeagent.data.mt5_client import MT5Client, MT5Credentials, MT5Error
+    from tradeagent.timeutil import utc_now
+
+    cfg = load_config()
+    if snapshot:
+        try:
+            with MT5Client(mode=cfg.settings.mode, credentials=MT5Credentials.from_env()) as c:
+                symbols = {
+                    internal: symbol_costs(c.symbol_info(broker))
+                    for internal, broker in cfg.settings.symbols.items()
+                }
+        except (MT5Error, ValueError) as exc:
+            typer.secho(f"Could not take a snapshot: {exc}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1) from exc
+        path = DEFAULT_CONFIG_DIR / COSTS_FILE
+        write_snapshot(
+            CostSnapshot(
+                taken_utc=utc_now().replace(microsecond=0),
+                source="MT5 symbol_info, Exness demo account",
+                symbols=symbols,
+            ),
+            path,
+        )
+        typer.secho(f"Saved {path}", fg=typer.colors.GREEN)
+        try:
+            cfg = load_config()
+        except ConfigError as exc:
+            typer.secho(str(exc), fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1) from exc
+
+    if cfg.costs is None:
+        typer.echo("No cost snapshot yet. Run: uv run tradeagent backtest costs --snapshot")
+        return
+    bt = cfg.settings.backtest
+    typer.secho(f"Cost snapshot taken {cfg.costs.taken_utc:%Y-%m-%d %H:%M} UTC", bold=True)
+    typer.echo(
+        f"  spread used = stored bar spread x {bt.spread_margin_multiple} + "
+        f"{bt.spread_margin_points} pts; slippage {bt.slippage_spread_multiple} x spread; "
+        f"commission ${bt.commission_per_lot_usd}/lot round turn"
+    )
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    for internal, spec in cfg.costs.symbols.items():
+        CostModel.from_config(cfg, internal)  # proves the snapshot is usable
+        vpp = spec.value_per_point_per_lot
+        triple = spec.triple_swap_weekday
+        typer.echo("")
+        typer.secho(f"{internal} ({spec.broker_symbol})", bold=True)
+        typer.echo(
+            f"  contract {spec.contract_size:g}, point {spec.point}, ${vpp:g} per point per lot, "
+            f"lots {spec.volume_min}-{spec.volume_max} step {spec.volume_step}"
+        )
+        for side, points in (("long", spec.swap_long), ("short", spec.swap_short)):
+            typer.echo(
+                f"  swap {side:<5} {points:>8g} pts = ${points * vpp:>9.2f} per lot per night "
+                f"(${points * vpp * 0.01:.2f} at 0.01 lot)"
+            )
+        typer.echo(
+            "  triple swap: "
+            + (f"{days[triple]} (x3)" if triple is not None else "none (every weekday x1)")
+            + f" [MT5 swap_rollover3days = {spec.swap_rollover3days}]"
+        )
+
+
+@backtest_app.command("spread-check")
+def backtest_spread_check(
+    weeks: Annotated[
+        int, typer.Option("--weeks", "-w", help="Complete weeks of ticks to measure.")
+    ] = 4,
+    timeframe: Annotated[str, typer.Option("--timeframe", "-t", help="M1 or M5.")] = "M5",
+) -> None:
+    """Measure real tick spreads vs the (minimum) spread MT5 stores per bar."""
+    from datetime import UTC, datetime, time, timedelta
+
+    from tradeagent.backtest.spread_check import bar_tick_spreads, propose_multiple, summarize
+    from tradeagent.config import load_config, project_path
+    from tradeagent.data.mt5_client import TIMEFRAMES, MT5Client, MT5Credentials, MT5Error
+    from tradeagent.data.store import BarStore
+    from tradeagent.timeutil import utc_now
+
+    if timeframe not in ("M1", "M5"):
+        typer.secho("timeframe must be M1 or M5", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+    cfg = load_config()
+    store = BarStore(project_path(cfg.settings.storage.bars_dir))
+    today = utc_now().date()
+    end_day = today - timedelta(days=(today.weekday() + 1) % 7)  # last Sunday
+    start_day = end_day - timedelta(weeks=weeks)
+    start = datetime.combine(start_day, time(), UTC)
+    end = datetime.combine(end_day, time(), UTC)
+    minutes = int(TIMEFRAMES[timeframe][1].total_seconds() // 60)
+    typer.echo(f"Ticks {start:%Y-%m-%d} -> {end:%Y-%m-%d} UTC ({weeks} weeks), {timeframe} bars")
+
+    summaries = []
+    try:
+        with MT5Client(mode=cfg.settings.mode, credentials=MT5Credentials.from_env()) as c:
+            for internal, broker in cfg.settings.symbols.items():
+                point = c.symbol_info(broker).point
+                ticks = c.get_ticks(broker, start, end)
+                bars = store.read(internal, timeframe, start, end)
+                s = summarize(bar_tick_spreads(ticks, bars, point, minutes))
+                summaries.append(s)
+                typer.echo("")
+                typer.secho(f"{internal}: {len(ticks):,} ticks, {int(s['bars']):,} bars", bold=True)
+                if not s["bars"]:
+                    typer.echo("  no bars with ticks in this range")
+                    continue
+                typer.echo(
+                    f"  stored spread = the minimum tick spread in {s['stored_is_min']:.1%} of bars"
+                )
+                typer.echo(
+                    "  time-weighted average / stored: "
+                    f"median {s['twavg_median']:.3f}, mean {s['twavg_mean']:.3f}, "
+                    f"p90 {s['twavg_p90']:.3f}, p99 {s['twavg_p99']:.3f}, max {s['twavg_max']:.2f}"
+                )
+                typer.echo(
+                    f"  spread at the bar's open / stored: p99 {s['open_p99']:.3f}, "
+                    f"max {s['open_max']:.2f}"
+                )
+    except MT5Error as exc:
+        typer.secho(f"MT5 problem: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo("")
+    typer.secho(
+        f"Proposed spread_margin_multiple: {propose_multiple(summaries)} "
+        f"(covers the 99th percentile; current setting "
+        f"{cfg.settings.backtest.spread_margin_multiple})",
+        bold=True,
+    )
+
+
 def _fmt_day(ts: object) -> str:
     return "-" if ts is None else f"{ts:%Y-%m-%d}"
 

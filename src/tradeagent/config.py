@@ -25,6 +25,7 @@ from pydantic import (
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_DIR = PROJECT_ROOT / "config"
 SPLITS_FILE = "splits.yaml"
+COSTS_FILE = "costs.yaml"
 
 Mode = Literal["research", "paper", "live"]
 Timeframe = Literal["M1", "M5", "M15", "H1", "H4", "D1"]
@@ -74,6 +75,10 @@ class BacktestSettings(_Strict):
     no_entry_minutes_after_open: int = Field(ge=0, le=240)
     friday_cutoff_ny: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     exclusions_source_timeframe: Timeframe
+    spread_margin_multiple: float = Field(ge=1.0, le=5.0)
+    spread_margin_points: float = Field(ge=0)
+    slippage_spread_multiple: float = Field(ge=0, le=5.0)
+    commission_per_lot_usd: float = Field(ge=0)  # round turn (open + close)
 
     @property
     def friday_cutoff_minutes(self) -> int:
@@ -214,12 +219,51 @@ class SplitDates(_Strict):
         return periods[split]
 
 
+class SymbolCosts(_Strict):
+    """Contract and swap values for one symbol, copied from MT5 symbol_info."""
+
+    broker_symbol: str
+    digits: int = Field(ge=0)
+    point: float = Field(gt=0)
+    tick_size: float = Field(gt=0)
+    tick_value: float = Field(gt=0)  # account currency per tick_size move, 1 lot
+    contract_size: float = Field(gt=0)
+    volume_min: float = Field(gt=0)
+    volume_step: float = Field(gt=0)
+    volume_max: float = Field(gt=0)
+    swap_mode: Literal[1]  # only "swap in points" is supported (both symbols use it)
+    swap_long: float  # points per lot per night (negative = you pay)
+    swap_short: float
+    swap_rollover3days: int = Field(ge=0, le=7)  # MT5: 0=Sunday..6=Saturday, 7=none
+
+    @property
+    def value_per_point_per_lot(self) -> float:
+        """Account currency gained/lost per 1-point price move with 1 lot."""
+        return self.tick_value * self.point / self.tick_size
+
+    @property
+    def triple_swap_weekday(self) -> int | None:
+        """Python weekday (Monday=0) of the x3 swap rollover, or None if there is none."""
+        if self.swap_rollover3days == 7:
+            return None
+        return (self.swap_rollover3days - 1) % 7
+
+
+class CostSnapshot(_Strict):
+    """config/costs.yaml: a dated copy of broker costs so backtests are repeatable."""
+
+    taken_utc: datetime
+    source: str
+    symbols: dict[str, SymbolCosts]  # internal symbol -> costs
+
+
 class AppConfig(_Strict):
     settings: Settings
     risk: RiskLimits
     live: LiveLock
     exclusions: DataExclusions
     splits: SplitDates | None  # None until Usama approves the split dates
+    costs: CostSnapshot | None  # None until `tradeagent backtest costs --snapshot`
     config_hash: str
 
     @model_validator(mode="after")
@@ -276,6 +320,8 @@ def load_config(config_dir: Path = DEFAULT_CONFIG_DIR) -> AppConfig:
     exclusions = _load_file(config_dir / "data_exclusions.yaml", DataExclusions)
     splits_path = config_dir / SPLITS_FILE
     splits = _load_file(splits_path, SplitDates) if splits_path.is_file() else None
+    costs_path = config_dir / COSTS_FILE
+    costs = _load_file(costs_path, CostSnapshot) if costs_path.is_file() else None
 
     parts: dict[str, Any] = {
         "settings": settings.model_dump(mode="json"),
@@ -285,6 +331,8 @@ def load_config(config_dir: Path = DEFAULT_CONFIG_DIR) -> AppConfig:
     }
     if splits is not None:
         parts["splits"] = splits.model_dump(mode="json")
+    if costs is not None:
+        parts["costs"] = costs.model_dump(mode="json")
     config_hash = compute_config_hash(parts)
     try:
         return AppConfig(
@@ -293,6 +341,7 @@ def load_config(config_dir: Path = DEFAULT_CONFIG_DIR) -> AppConfig:
             live=live,
             exclusions=exclusions,
             splits=splits,
+            costs=costs,
             config_hash=config_hash,
         )
     except ValidationError as exc:

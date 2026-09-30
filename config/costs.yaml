@@ -1,0 +1,35 @@
+# Broker cost snapshot for backtests (docs/PHASE_2_TASKS.md 2.4). Written by
+# `tradeagent backtest costs --snapshot`; refresh it the same way, and note
+# changed swap values in docs/DECISIONS.md. Swaps are points per lot per night;
+# swap_rollover3days: MT5 day number (0=Sunday..6=Saturday), 7 = no triple day.
+taken_utc: '2026-09-30T05:14:05Z'
+source: MT5 symbol_info, Exness demo account
+symbols:
+  XAUUSD:
+    broker_symbol: XAUUSDm
+    digits: 3
+    point: 0.001
+    tick_size: 0.001
+    tick_value: 0.1
+    contract_size: 100.0
+    volume_min: 0.01
+    volume_step: 0.01
+    volume_max: 200.0
+    swap_mode: 1
+    swap_long: -560.0
+    swap_short: 0.0
+    swap_rollover3days: 3
+  USOIL:
+    broker_symbol: USOILm
+    digits: 3
+    point: 0.001
+    tick_size: 0.001
+    tick_value: 1.0
+    contract_size: 1000.0
+    volume_min: 0.01
+    volume_step: 0.01
+    volume_max: 100.0
+    swap_mode: 1
+    swap_long: 0.0
+    swap_short: -186.2
+    swap_rollover3days: 7

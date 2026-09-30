@@ -98,6 +98,10 @@ class SymbolSpec:
     volume_step: float
     spread_points: int  # current spread
     typical_spread_points: float  # median over the last day of M1 bars
+    swap_mode: int  # MT5 SYMBOL_SWAP_MODE_*; 1 = swap given in points
+    swap_long: float  # per lot per night, in swap_mode units
+    swap_short: float
+    swap_rollover3days: int  # MT5 day number 0=Sunday..6=Saturday; 7 = no triple day
 
 
 @dataclass(frozen=True)
@@ -307,4 +311,31 @@ class MT5Client:
             volume_step=float(info.volume_step),
             spread_points=int(info.spread),
             typical_spread_points=typical,
+            swap_mode=int(info.swap_mode),
+            swap_long=float(info.swap_long),
+            swap_short=float(info.swap_short),
+            swap_rollover3days=int(info.swap_rollover3days),
         )
+
+    def get_ticks(self, symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
+        """Bid/ask ticks with time in [start, end]: columns time_utc (ms precision), bid, ask.
+
+        Read-only market data, used to measure real spreads (docs/PHASE_2_TASKS.md 2.4).
+        """
+        self._require_connection()
+        start_utc, end_utc = ensure_utc(start), ensure_utc(end)
+        self._select(symbol)
+        ticks = self._mt5.copy_ticks_range(symbol, start_utc, end_utc, self._mt5.COPY_TICKS_INFO)
+        if ticks is None:
+            raise MT5Error(f"copy_ticks_range failed for {symbol}: {self._mt5.last_error()}")
+        df = pd.DataFrame(ticks)
+        if df.empty:
+            return pd.DataFrame(
+                {
+                    "time_utc": pd.Series(dtype=TIME_DTYPE),
+                    "bid": pd.Series(dtype="float64"),
+                    "ask": pd.Series(dtype="float64"),
+                }
+            )
+        df["time_utc"] = pd.to_datetime(df["time_msc"], unit="ms", utc=True).astype(TIME_DTYPE)
+        return df[["time_utc", "bid", "ask"]].sort_values("time_utc").reset_index(drop=True)
