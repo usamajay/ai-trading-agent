@@ -21,7 +21,7 @@ An autonomous, probabilistic, risk-controlled trading **research and paper-tradi
 | 3 | Strategy engine | ✅ done |
 | 4 | Risk engine | ✅ done |
 | 5 | Probability / EV engine | ✅ done |
-| 6 | Hypothesis generation | ⬜ |
+| 6 | Hypothesis generation | ⏳ 6.1–6.6 done; 6.7 (Claude API) waits for the API key |
 | 7 | Walk-forward + OOS | ⬜ |
 | 8 | Paper trading | ⬜ |
 | 9 | Monitoring + self-improvement | ⬜ |
@@ -69,6 +69,16 @@ All commands are for **Windows PowerShell**, run from the project folder.
 | `uv run tradeagent kill --reason "..."` | **Kill switch**: stops all trading at once (creates the `KILL` file). `--status` shows it; `--clear --reason "..."` removes it |
 | `uv run tradeagent news fetch` | Downloads this week's high-impact USD events (run weekly; without it, live entries are blocked) |
 | `uv run tradeagent news show` | Upcoming events and whether a news blackout is active now |
+
+### Research commands (Phase 6)
+| Command | What it does |
+|---|---|
+| `uv run tradeagent research list` | All hypotheses and experiments, and how many tests have been run in total |
+| `uv run tradeagent research register ...` | Writes down an experiment and its success rule **before** it runs |
+| `uv run tradeagent research run E0001` | Runs a registered experiment once; the pass/fail comes from the stored rule |
+| `uv run tradeagent research withdraw E0009 --reason "..."` | Cancels an experiment that has not run (not counted) |
+| `uv run tradeagent research conclude H1 --status falsified --lesson "..."` | Records a human conclusion with a lesson |
+| `uv run tradeagent research scan --dry-run` | Looks for groups of trades (hour, session, weekday, direction, regime) that differ beyond chance |
 
 ### Probability commands (Phase 5)
 | Command | What it does |

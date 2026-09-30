@@ -70,7 +70,23 @@ Standard = ≥ 100 trades, expectancy > 0 R after costs, 95% CI lower bound > 0,
 
 **Proposed conclusion (for Usama): H5 falsified on train** for the EA's default settings; neither variant goes to validation.
 
-## Summary (Usama's decisions 2026-09-30)
+## 6.6 Statistical scans (train, 2026-10-01)
+
+`tradeagent research scan`: the latest train run of each strategy/variant and symbol (27 runs), trades grouped by what is known **at entry**: entry hour (UTC), session, weekday, direction, trend regime and volatility regime of the signal bar. Each group (≥ 30 trades, and ≥ 30 in the rest of the run) is compared with the rest of its run by a Welch z-test; a group is flagged only if p < 0.05 / (groups tested) (Bonferroni).
+
+**Result: 213 groups tested, threshold p < 2.35 × 10⁻⁴, no group flagged.** Closest (none near the threshold):
+
+| p | Run | Group | Mean R (n) | Rest mean R (n) |
+|---|---|---|---|---|
+| 0.0099 | breakout_compression[reg=suited] XAUUSD | hour 02 UTC | +0.630 (31) | −0.118 (182) |
+| 0.016 | breakout_compression XAUUSD | hour 02 UTC | +0.521 (43) | −0.062 (357) |
+| 0.020 | session_breakout XAUUSD | high volatility | +0.188 (106) | −0.191 (208) |
+| 0.027 | session_breakout USOIL | Tuesday | −0.442 (81) | −0.109 (324) |
+| 0.027 | breakout_compression USOIL | ranging | −0.244 (301) | +0.020 (234) |
+
+The two gold 02:00 rows share most of their trades (the filtered run is a subset), so they are one weak signal, not two. **Mistake caught and fixed:** the first version also grouped by holding time and weekend hold; it "found" 12 strong groups (fast exits lose), but holding time is only known after the exit, so these are not usable rules. Those dimensions were removed before any hypothesis was stored. No scan hypotheses were added.
+
+
 
 | Hypothesis | Status | Evidence |
 |---|---|---|

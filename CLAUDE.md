@@ -62,5 +62,12 @@ uv run tradeagent risk status           # limits in force, kill switch, stops
 uv run tradeagent kill --reason "..."   # kill switch (--status, --clear --reason "...")
 uv run tradeagent news fetch            # this week's high-impact USD events (news show to view)
 uv run pytest tests/test_risk.py --cov=tradeagent.risk --cov-branch --cov-fail-under=100  # risk coverage gate
+uv run tradeagent research list          # hypotheses, experiments, strict multiple-testing total
+uv run tradeagent research register -H H1 --strategy NAME [--timeframes H4,D1 --direction long --style swing --regimes suited --param k=v --criterion JSON]
+uv run tradeagent research run E0001 [E0002 ...]  # runs once; verdict from the stored criterion
+uv run tradeagent research withdraw E0009 --reason "..."  # before running; not counted
+uv run tradeagent research conclude H1 --status falsified --lesson "..."
+uv run tradeagent research scan [--dry-run]  # entry-time groups, Bonferroni; flags -> scan hypotheses
+uv run tradeagent research load-leads    # docs/RESEARCH_HYPOTHESES.md -> hypotheses
 uv run tradeagent prob calibrate --latest  # p_win/EV calibration of latest train runs (--run RUN_ID for one)
 ```

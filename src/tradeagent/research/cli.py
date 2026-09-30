@@ -228,3 +228,60 @@ def withdraw_cmd(
     finally:
         conn.close()
     typer.echo(f"{experiment}: withdrawn")
+
+
+@research_app.command("scan")
+def scan_cmd(
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Show flags without adding hypotheses")
+    ] = False,
+) -> None:
+    """Scan the latest train run of each strategy/variant for groups that differ beyond
+    noise (Bonferroni over every group tested); flags become `scan` hypotheses."""
+    import pandas as pd
+
+    from tradeagent.backtest.compare import latest_runs
+    from tradeagent.backtest.dataset import load_bars
+    from tradeagent.config import project_path
+    from tradeagent.data.store import BarStore
+    from tradeagent.features.regime import trade_regimes
+    from tradeagent.research.experiments import add_hypothesis
+    from tradeagent.research.scans import hypothesis_for, run_labels, scan
+
+    cfg, conn = _db()
+    store = BarStore(project_path(cfg.settings.storage.bars_dir))
+    try:
+        runs = []
+        bars_cache: dict[tuple[str, str], pd.DataFrame] = {}
+        for run in latest_runs(conn, "train").to_dict("records"):
+            path = Path(run["output_dir"]) / "trades.parquet"
+            if not path.is_file():
+                continue
+            trades = pd.read_parquet(path)
+            if trades.empty:
+                continue
+            key = (run["symbol"], run["timeframe"])
+            if key not in bars_cache:
+                bars_cache[key] = load_bars(store, *key)
+            regimes = trade_regimes(trades, bars_cache[key], run["timeframe"])
+            runs.append((run, trades, run_labels(trades, regimes)))
+        result = scan(runs)
+        typer.echo(
+            f"{len(runs)} runs, {len(result.tests)} groups tested; "
+            f"flag threshold p < {result.threshold:.2e} (0.05 / groups)"
+        )
+        for t in sorted(result.flags, key=lambda x: x.p):
+            hid, text, rationale = hypothesis_for(t, result.threshold)
+            added = False if dry_run else add_hypothesis(conn, cfg, hid, text, rationale, "scan")
+            status = "dry run" if dry_run else ("added" if added else "already known")
+            typer.echo(f"{hid} p={t.p:.1e} [{status}] {text}")
+        if not result.flags:
+            typer.echo("No group differs beyond noise after the correction.")
+        typer.echo("Closest groups (for information, not flagged unless marked above):")
+        for t in sorted(result.tests, key=lambda x: x.p)[:5]:
+            typer.echo(
+                f"  p={t.p:.1e} {t.strategy} {t.symbol} {t.dimension}={t.group}: "
+                f"{t.mean_r:+.3f} R (n={t.n}) vs {t.rest_mean_r:+.3f} R (n={t.rest_n})"
+            )
+    finally:
+        conn.close()
