@@ -56,4 +56,5 @@ uv run tradeagent backtest spread-check  # real tick spreads vs stored bar sprea
 uv run tradeagent backtest run --strategy NAME --symbol XAUUSD --split train --seed 1  # report in data/backtests/
 uv run tradeagent backtest list         # past runs (run counter, stress PASS/FAIL)
 uv run tradeagent backtest lookahead-check --strategy NAME  # truncation test on real data
+uv run tradeagent backtest baseline --symbol XAUUSD --seeds 100  # random-baseline distribution (~10 min); --timeframe H1 --style swing
 ```

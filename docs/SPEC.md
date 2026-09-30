@@ -207,6 +207,7 @@ Rules:
 - Max **5 tunable parameters** per strategy; each has a documented range.
 - Signals are computed on **closed bars only**; the backtest engine enforces this.
 - Every signal carries a human-readable `why` ("EMA20>EMA50>EMA200 on H1, pullback to EMA20 on M15, RSI 45 bounce").
+- Built in Phase 2 (`strategies/base.py`): `timeframes[0]` is the decision timeframe; a strategy declares `lookback_bars` (signals whose lookback touches a data hole are skipped); an optional `prepare(frames)` adds indicator columns once per run; `ctx.expected_entry(direction)` gives the price a market order would pay (ask for longs), and stops/targets are measured from it; signals may be market, limit or stop orders with an expiry. Every strategy must pass the look-ahead truncation check before its results count.
 
 ### 4.1 Starting strategy set (Phase 3)
 
@@ -278,6 +279,7 @@ Position size = `(equity × risk%) / (SL distance × value per point per lot)`, 
 - Costs: real historical spread per bar plus a configurable safety margin (the MT5 bar spread is usually the bar's minimum), else broker typical spread; commission; slippage model (default 0.2×spread normal, 3×spread in news windows); swap for overnight holds.
 - Intrabar ambiguity: if SL and TP both inside one bar, check the M5 bars inside it (strategies on M15 and above); if still unresolved, or the strategy runs on M5, assume **SL hit first** (pessimistic). The same method is used in every split; M1 (out-of-sample only) is reported as a side-by-side check, never used for the result.
 - Gaps (weekend, daily break, holiday, data hole): if a bar opens beyond the SL, fill at that bar's **open**; TP fills at the TP price. Trades record whether they were held over a weekend.
+- Scalp/intraday trades close by Friday 16:30 New York, and 30 minutes before any other market closure of a day or more (holiday early closes, closed Fridays).
 - D1/H4 used by strategies are rebuilt from H1 on a **17:00 New York** day boundary (broker D1/H4 contain a Sunday stub candle).
 - Data exclusions (holes, no-trade windows) come from `data_quality_log` plus reviewed decisions in `docs/DECISIONS.md`; see `docs/DATA_NOTES.md` §5.
 
