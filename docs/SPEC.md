@@ -295,6 +295,7 @@ Win rate, profit factor, expectancy (R and $), average trade, Sharpe, Sortino, C
 ### 7.4 Robustness checks (candidate must pass all)
 - ≥ 200 trades in train+validation; ≥ 50 in OOS.
 - OOS profit factor ≥ 1.2 and OOS expectancy > 0 after costs.
+- Cost stress: re-run with spread and slippage × 1.5 (on top of the normal spread safety margin); expectancy must stay > 0 after costs.
 - Beats the random-entry baseline with p < 0.05 (bootstrap).
 - Parameter sensitivity: ±20% change in each parameter keeps PF ≥ 1.1 (no "knife-edge" peaks).
 - Monte Carlo (trade order shuffle, 1000 runs): 95th-percentile drawdown ≤ 2× backtest drawdown and within risk limits.

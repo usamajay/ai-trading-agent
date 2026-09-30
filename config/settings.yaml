@@ -23,7 +23,7 @@ backtest:                        # backtest engine (docs/PHASE_2_TASKS.md)
   no_entry_minutes_after_open: 15  # no new entries right after any reopen (wide spreads)
   friday_cutoff_ny: "16:30"      # scalp/intraday: flat, no new entries from here (New York)
   exclusions_source_timeframe: M5  # finest timeframe with full history; holes found on it
-  spread_margin_multiple: 1.0    # PENDING Usama's approval (tradeagent backtest spread-check)
+  spread_margin_multiple: 1.1    # approved by Usama 2026-09-30 (tradeagent backtest spread-check)
   spread_margin_points: 0        # extra points added on top of the multiple
   slippage_spread_multiple: 0.2  # slippage on market/stop entries and stop-loss exits
   commission_per_lot_usd: 0.0    # round turn; Exness Standard has no commission
