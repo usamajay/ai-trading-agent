@@ -13,6 +13,8 @@ entry_rules:
   min_ev_r: 0.15
   min_p_win_lower: 0.40
   min_sample_trades: 100
+  prior_strength: 20              # Beta prior pseudo-trades, centred on 50% (SPEC §5 shrinkage)
+  credible_level: 0.90            # p_win interval; its lower bound is checked vs min_p_win_lower
 data_splits:                     # fixed, chronological; dates frozen in config/splits.yaml
   train: 0.60
   validation: 0.20

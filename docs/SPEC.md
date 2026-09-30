@@ -239,6 +239,13 @@ For each signal, estimate (from out-of-sample history of that strategy in the sa
 
 **Entry rule (defaults, in config):** `ev_r ≥ 0.15`, `p_win lower-bound ≥ 0.40`, `RR ≥ 2.0`, `sample_size ≥ 100 trades` for that strategy/regime. Otherwise → reject and log reason.
 
+### 5.1 How it is built (Phase 5, `src/tradeagent/prob/`)
+- Outcome of a closed trade: take-profit = win, stop-loss = loss, any other exit = timeout. History R multiples are **net of costs**, so `ev_r = p_win·avg_win_r − p_loss·avg_loss_r + p_timeout·avg_timeout_r − extra_cost_r` (`extra_cost_r` = 0 unless a signal costs more than its history).
+- Prior Beta(k/2, k/2) with `prior_strength` k = 20 (`settings.yaml`); credible interval at `credible_level` 90%, its lower bound is checked against `min_p_win_lower`.
+- Entry gate reason codes: `sample_small`, `p_win_low`, `ev_low` (RR is checked by the risk engine).
+- Calibration (`tradeagent prob calibrate`): each trade is predicted only from trades of the same run that closed before it entered; Brier score vs always-50% and vs the hindsight constant; reliability table; what the gate would have allowed. Out-of-sample runs are refused.
+- Regime conditioning waits for the regime detector (Phase 8); until then the history key is `all`.
+
 A 60% win rate is a **research benchmark, not a target**. Strategies are ranked by out-of-sample expectancy, profit factor, and drawdown — never by win rate alone.
 
 ---

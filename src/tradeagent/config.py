@@ -54,6 +54,8 @@ class EntryRules(_Strict):
     min_ev_r: float = Field(ge=0)
     min_p_win_lower: float = Field(gt=0, lt=1)
     min_sample_trades: int = Field(ge=1)
+    prior_strength: float = Field(gt=0)
+    credible_level: float = Field(gt=0, lt=1)
 
 
 class DataSplits(_Strict):

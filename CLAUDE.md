@@ -62,4 +62,5 @@ uv run tradeagent risk status           # limits in force, kill switch, stops
 uv run tradeagent kill --reason "..."   # kill switch (--status, --clear --reason "...")
 uv run tradeagent news fetch            # this week's high-impact USD events (news show to view)
 uv run pytest tests/test_risk.py --cov=tradeagent.risk --cov-branch --cov-fail-under=100  # risk coverage gate
+uv run tradeagent prob calibrate --latest  # p_win/EV calibration of latest train runs (--run RUN_ID for one)
 ```

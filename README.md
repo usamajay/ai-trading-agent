@@ -20,7 +20,7 @@ An autonomous, probabilistic, risk-controlled trading **research and paper-tradi
 | 2 | Backtesting framework | ✅ done |
 | 3 | Strategy engine | ✅ done |
 | 4 | Risk engine | ✅ done |
-| 5 | Probability / EV engine | ⬜ |
+| 5 | Probability / EV engine | ✅ done |
 | 6 | Hypothesis generation | ⬜ |
 | 7 | Walk-forward + OOS | ⬜ |
 | 8 | Paper trading | ⬜ |
@@ -69,6 +69,11 @@ All commands are for **Windows PowerShell**, run from the project folder.
 | `uv run tradeagent kill --reason "..."` | **Kill switch**: stops all trading at once (creates the `KILL` file). `--status` shows it; `--clear --reason "..."` removes it |
 | `uv run tradeagent news fetch` | Downloads this week's high-impact USD events (run weekly; without it, live entries are blocked) |
 | `uv run tradeagent news show` | Upcoming events and whether a news blackout is active now |
+
+### Probability commands (Phase 5)
+| Command | What it does |
+|---|---|
+| `uv run tradeagent prob calibrate --latest` | Checks how well predicted win chances matched real outcomes for the latest backtest of each strategy; writes `docs/reports/PHASE_5_CALIBRATION.md` |
 
 ### Backtesting commands (Phase 2)
 | Command | What it does |
