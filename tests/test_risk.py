@@ -2,7 +2,7 @@
 Target: 100% coverage of src/tradeagent/risk (Phase 4 done-criterion)."""
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -18,6 +18,7 @@ from tradeagent.risk.state import (
     load_state,
     log_risk_event,
     save_state,
+    trading_date,
     trading_week,
 )
 from tradeagent.risk.tokens import TokenSigner
@@ -153,15 +154,22 @@ def test_trading_week_starts_with_the_sunday_evening_open() -> None:
     assert trading_week(before_open) == "2026-W01"
 
 
-def test_daily_loss_stops_until_next_utc_day() -> None:
+def test_daily_loss_stops_until_17_new_york() -> None:
     s = RiskState.start(10_000, NOW)
     assert s.mark(9_850, NOW, LIMITS) == []  # -1.5%
     assert s.mark(9_790, NOW + timedelta(hours=1), LIMITS) == ["daily_loss"]  # -2.1%
     s.mark(10_100, NOW + timedelta(hours=2), LIMITS)  # recovered: still stopped today
     assert [c for c, _ in s.blocks(NOW + timedelta(hours=2))] == ["daily_loss"]
-    tomorrow = datetime(2026, 1, 7, 0, 5, tzinfo=UTC)
-    s.mark(10_100, tomorrow, LIMITS)
-    assert s.blocks(tomorrow) == [] and s.day_start_equity == 10_100
+    before_close = datetime(2026, 1, 6, 21, 55, tzinfo=UTC)  # 16:55 New York (winter)
+    assert [c for c, _ in s.blocks(before_close)] == ["daily_loss"]
+    new_day = datetime(2026, 1, 6, 22, 5, tzinfo=UTC)  # 17:05 New York: same UTC day
+    s.mark(10_100, new_day, LIMITS)
+    assert s.blocks(new_day) == [] and s.day_start_equity == 10_100
+
+
+def test_trading_date_follows_new_york_summer_time() -> None:
+    assert trading_date(datetime(2026, 7, 7, 20, 55, tzinfo=UTC)) == date(2026, 7, 7)
+    assert trading_date(datetime(2026, 7, 7, 21, 5, tzinfo=UTC)) == date(2026, 7, 8)
 
 
 def test_weekly_loss_stops_until_next_week() -> None:

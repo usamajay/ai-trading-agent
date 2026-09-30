@@ -1,7 +1,8 @@
 """Running account state for the account-level risk rules (SPEC §6).
 
 - Daily loss: equity at least `max_daily_loss_pct` below the equity at the start of
-  the UTC day -> no new trades until 00:00 UTC.
+  the trading day (17:00 New York, same as daily bars and swap rollover) -> no new
+  trades until the next 17:00 New York.
 - Weekly loss: at least `max_weekly_loss_pct` below the start of the trading week
   (weeks start with the Sunday evening open) -> no new trades until next week.
 - Drawdown: at least `max_drawdown_pct` below the equity peak -> full shutdown until
@@ -25,14 +26,14 @@ from tradeagent.data.market_hours import trading_day
 STATE_KEY = "account"
 
 
-def utc_day(now: datetime) -> date:
-    return pd.Timestamp(now).tz_convert("UTC").date()
+def trading_date(now: datetime) -> date:
+    """The trading day (17:00 -> 17:00 New York) that `now` belongs to."""
+    return trading_day(pd.Series([pd.Timestamp(now).tz_convert("UTC")])).iloc[0]
 
 
 def trading_week(now: datetime) -> str:
     """ISO week of the trading day (17:00 New York days), e.g. '2026-W40'."""
-    day = trading_day(pd.Series([pd.Timestamp(now).tz_convert("UTC")])).iloc[0]
-    iso = day.isocalendar()
+    iso = trading_date(now).isocalendar()
     return f"{iso.year}-W{iso.week:02d}"
 
 
@@ -62,13 +63,13 @@ class RiskState:
 
     @classmethod
     def start(cls, equity: float, now: datetime) -> "RiskState":
-        return cls(equity, equity, utc_day(now), equity, trading_week(now), equity)
+        return cls(equity, equity, trading_date(now), equity, trading_week(now), equity)
 
     # --- updates ------------------------------------------------------------------
 
     def mark(self, equity: float, now: datetime, limits: RiskLimits) -> list[str]:
         """New equity (closed P&L + open trades valued now). Returns triggered rules."""
-        today, week = utc_day(now), trading_week(now)
+        today, week = trading_date(now), trading_week(now)
         if today != self.day:  # the day starts from the last equity seen before it
             self.day, self.day_start_equity = today, self.equity
         if week != self.week:
@@ -126,9 +127,12 @@ class RiskState:
             out.append(
                 ("shutdown", f"trading shut down: {self.shutdown_reason}; needs a manual restart")
             )
-        if self.daily_stop_day == utc_day(now):
+        if self.daily_stop_day == trading_date(now):
             out.append(
-                ("daily_loss", f"daily loss limit hit on {self.daily_stop_day}; resumes 00:00 UTC")
+                (
+                    "daily_loss",
+                    f"daily loss limit hit on {self.daily_stop_day}; resumes 17:00 New York",
+                )
             )
         if self.weekly_stop_week == trading_week(now):
             out.append(

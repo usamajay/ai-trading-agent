@@ -254,7 +254,7 @@ A 60% win rate is a **research benchmark, not a target**. Strategies are ranked 
 | Rule | Default | Action when hit |
 |---|---|---|
 | Risk per trade | 0.5% of equity | Size down; reject if min lot exceeds it |
-| Max daily loss | 2% | Stop trading until next day (UTC 00:00) |
+| Max daily loss | 2% | Stop trading until the next trading day (17:00 New York) |
 | Max weekly loss | 4% | Stop until next week |
 | Max drawdown from peak | 10% | Full shutdown, needs manual restart |
 | Max open positions | 1 (total), 1 per symbol | Reject |
@@ -270,11 +270,11 @@ Position size = `(equity × risk%) / (SL distance × value per point per lot)`, 
 
 ### 6.2 How the rules are applied (built in Phase 4, `src/tradeagent/risk/`)
 - A decision lists **every** failed rule with a reason code (`kill_switch`, `shutdown`, `daily_loss`, `weekly_loss`, `loss_streak`, `no_stop`, `sl_atr`, `rr`, `spread`, `news`, `news_unknown`, `max_positions`, `correlation`, `min_lot`); a token is issued only when none fails.
-- **Daily loss** is measured from the equity at the start of the UTC day and stops new trades until 00:00 UTC; **weekly loss** from the start of the trading week (the Sunday evening open) until the next week; the **drawdown shutdown** holds until a human restart with a written reason, which resets the peak to the current equity. Stops hold for their period even if equity recovers.
+- **Daily loss** is measured from the equity at the start of the trading day (17:00 New York, the same boundary as daily bars and swap rollover) and stops new trades until the next 17:00 New York; **weekly loss** from the start of the trading week (the Sunday evening open) until the next week; the **drawdown shutdown** holds until a human restart with a written reason, which resets the peak to the current equity. Stops hold for their period even if equity recovers.
 - **Tokens:** HMAC-SHA256 over order id, symbol, side, lots and stop-loss, with a per-process secret; they expire after 60 s and are single use. `execution/paper.py` verifies every field.
 - **News blackout:** high-impact USD events ±30 min. Live: a weekly feed (`tradeagent news fetch`); if this week's calendar is missing, entries are blocked (`news_unknown`). Backtests: official FOMC, jobs-report and CPI dates in `config/news/usd_high_impact_history.csv` (GDP, PCE, ISM and retail sales not included: known limitation).
 - **Kill switch:** `tradeagent kill --reason ...` creates `KILL`; clearing needs `--clear --reason ...`; both are logged to `risk_events`.
-- **Backtests** apply the trade-level rules and the news blackout; account-level limits are reported as flags unless `--enforce-account-limits` is given (paper and live always enforce everything).
+- **Backtests** apply the trade-level rules and the news blackout; account-level limits are reported as flags unless `--enforce-account-limits` is given (paper and live always enforce everything). **Any backtest used for a promotion decision must run with account limits enforced** (§8.1).
 
 ---
 
@@ -323,6 +323,7 @@ Definitions (code: `src/tradeagent/backtest/metrics.py`):
 - Monte Carlo (trade order shuffle, 1000 runs): 95th-percentile drawdown ≤ 2× backtest drawdown and within risk limits.
 - Works on at least 2 of 3 walk-forward regimes it claims to suit.
 - Multiple-testing correction: record how many variants were tried; apply Deflated Sharpe Ratio or Bonferroni-style haircut.
+- Every backtest used for these checks runs with **account-level limits enforced** (`--enforce-account-limits`; stored as `"__account_limits": "enforced"` in `params_json`).
 
 ---
 
@@ -348,6 +349,8 @@ Definitions (code: `src/tradeagent/backtest/metrics.py`):
 | oos_passed → paper | Automatic |
 | paper → approved | ≥ 4 weeks and ≥ 50 paper/demo trades; results within the OOS 90% band; **human review** |
 | approved → production | **Human approval** recorded in `approvals` with evidence link |
+
+**Account limits enforced:** every backtest a gate relies on (train, validation, walk-forward, OOS, cost stress, sensitivity) must run with `--enforce-account-limits` (daily/weekly loss, drawdown shutdown, loss-streak pause applied as in paper and live). The Phase 7 gate code refuses a run whose `params_json` does not say `"__account_limits": "enforced"`. Flag-mode runs are for research only.
 
 ---
 
