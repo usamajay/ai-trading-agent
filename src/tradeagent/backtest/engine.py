@@ -179,6 +179,9 @@ class _Run:
     atr: np.ndarray
     median_spread: np.ndarray
     equity: float
+    # Research sensitivity only: assume a trigger and the new stop in the same bar happened
+    # in the favourable order (trade continues). Default: the pessimistic order.
+    optimistic_stop_moves: bool = False
     order: _Order | None = None
     position: _Position | None = None
     trades: list[dict[str, object]] = field(default_factory=list)
@@ -405,7 +408,7 @@ class _Run:
             p.stop = max(p.stop, new_stop) if long else min(p.stop, new_stop)
             p.stage += 1
             moved = True
-        if moved and (low <= p.stop if long else high >= p.stop):
+        if moved and not self.optimistic_stop_moves and (low <= p.stop if long else high >= p.stop):
             self._close(p.stop, "sl", b, j, i, slip=True, tie="move_same_bar")
 
     def _close_at_bar_close(self, i: int, reason: str) -> None:
@@ -654,6 +657,7 @@ def run_backtest(
     decision_costs: CostModel | None = None,
     news: NewsSource | None = None,
     enforce_account_limits: bool = False,
+    optimistic_stop_moves: bool = False,
 ) -> BacktestResult:
     """Run one strategy over one dataset (a split of one symbol/timeframe).
 
@@ -726,6 +730,7 @@ def run_backtest(
         atr=atr(bars, ATR_PERIOD).to_numpy(),
         median_spread=spread.rolling(SPREAD_MEDIAN_BARS, min_periods=1).median().to_numpy(),
         equity=settings.starting_balance,
+        optimistic_stop_moves=optimistic_stop_moves,
     )
     first_in_split = int(np.argmax(decision.in_split)) if decision.in_split.any() else 0
     run.curve.append((decision.time[first_in_split], settings.starting_balance))

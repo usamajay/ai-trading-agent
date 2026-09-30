@@ -34,6 +34,42 @@ Not run as strategy experiments (no run counted):
 
 Standard = ≥ 100 trades, expectancy > 0 R after costs, 95% CI lower bound > 0, ≥ 95th percentile of the mixed baseline (per seed: long-only and short-only gold M15 swing random baselines weighted by the run's long share), cost stress positive. Our risk engine (0.5% risk, 2% daily loss, news blackout, stop 0.5–3 ATR, RR ≥ 2) overrides the EA's own risk settings. The EA's defaults may be optimizer-fitted, so **validation (one attempt) is the real judge** for a variant that passes train. Reported regardless of verdict: exit distribution (SL / breakeven / TP1-lock / TP3 = first stop / stop after move 1 / stop after move 2 / target), long vs short, and the gold uptrend caveat.
 
+## H5 results: GoldSR EA v2.4 on train — 0 of 2 pass
+
+| | E0021 re-entry ON | E0022 re-entry OFF |
+|---|---|---|
+| Trades | 188 | 171 |
+| Expectancy (R, after costs) | **−0.175** | **−0.166** |
+| 95% CI lower bound | −0.327 | −0.326 |
+| Win rate / profit factor | 40.4% / 0.70 | 40.4% / 0.72 |
+| Cost stress (spread × 1.5) | −0.191 | −0.184 |
+| Random trades, same long/short mix (mean) | −0.025 | −0.024 |
+| Percentile vs that baseline | **0th** | **0th** |
+| Long share | 79% | 80% |
+| Longs / shorts expectancy | −0.168 / −0.201 | −0.161 / −0.188 |
+| Cost per trade | 0.067 R (15.8% of gross profit) | 0.069 R (15.7%) |
+
+**How trades ended (R distribution), E0022 (E0021 in brackets):**
+
+| Exit | Trades | Mean R |
+|---|---|---|
+| SL (first stop) | 96 (105) | −1.03 |
+| Breakeven (stop after TP1) | 17 (20) | 0.00 |
+| TP1-lock (stop after TP2) | 40 (43) | +0.96 |
+| TP3 (target) | 17 (18) | +1.95 |
+| Friday exit | 1 (2) | −0.48 |
+
+56% of trades lose the full 1R; of the trades that reach TP1, most end at the TP1 lock (+1R) and only about one in four reaches TP3. To break even with this exit mix the first-stop share would need to fall to roughly 45%.
+
+**Checks:**
+- **Same-bar stop moves:** 22–24 trades had the trigger and the new stop inside one M5 bar; the verdict uses the pessimistic order. As a bound (analysis only, not a counted run), assuming the favourable order gives **−0.093 R (OFF) / −0.098 R (ON)**: still negative and far below random. M1 data does not cover train, so the true value lies between.
+- **Risk engine differences from the EA:** 41 of 260 signals (16%, re-entry OFF) were rejected for a stop outside 0.5–3 × ATR, 4–8 for the news blackout; the EA would have taken them. 460 decision bars were skipped because the 600-bar pivot lookback touched the one excluded gold data hole (June 2025).
+- **Re-entry** changes little: 17 more trades, about the same expectancy.
+- Look-ahead truncation test: PASS on real gold data (20 cuts). Results reproduce exactly on re-run.
+- **Caveat (standing rule):** gold rose +77% over train, and 80% of GoldSR's trades were longs; the comparison is against random trades with the same mix. Any MT5 Strategy Tester results seen earlier had no news filter and used 1% risk.
+
+**Proposed conclusion (for Usama): H5 falsified on train** for the EA's default settings; neither variant goes to validation.
+
 ## Summary (Usama's decisions 2026-09-30)
 
 | Hypothesis | Status | Evidence |
@@ -42,9 +78,9 @@ Standard = ≥ 100 trades, expectancy > 0 R after costs, 95% CI lower bound > 0,
 | H2 swap asymmetry | **supported (cost only)** | measured swap cost; strategy tests withdrawn (drift) |
 | H3 oil too costly | **supported** | oil costs 2–3× gold at every timeframe; no oil strategy near the 95th percentile |
 | H4 regime filters | **falsified** (4 strategies, labeller `research-1`) | 0/8 pass; no improvement beyond noise |
-| H5 GoldSR EA | waiting for rules | — |
+| H5 GoldSR EA | proposed: falsified (E0021/E0022 0/2, −0.17 R, 0th percentile) | see H5 results |
 
-Strict multiple-testing total: **16 experiment runs** (E0001–E0008, E0013–E0020); E0009–E0012 withdrawn, not counted.
+Strict multiple-testing total: **18 experiment runs** (E0001–E0008, E0013–E0022); E0009–E0012 withdrawn, not counted.
 
 **Standing caveat:** gold rose +77.3% over train (2023-10-01 → 2025-06-27). Any direction-biased idea on gold must beat the same-direction random baseline, and this uptrend may not repeat in validation or out-of-sample.
 

@@ -954,3 +954,35 @@ def test_strategy_hears_about_its_fills_and_exits() -> None:
     assert (closed.exit_reason, closed.stop_stage, closed.exit_price) == ("sl", 1, 2001.3)
     assert closed.net_pnl == pytest.approx(0.3 / 0.001 * 0.1 * 0.09)
     assert closed.stop_loss == 1995.0
+
+
+def test_optimistic_stop_move_order_is_a_research_option() -> None:
+    m5, m15 = m15_case(
+        [(2001, 2007.5, 2000.9, 2002), (2002, 2003, 2001.5, 2002), (2002, 2003, 2001.5, 2002)]
+    )
+    costs = CostModel.from_settings("XAUUSD", GOLD, BT)
+    data = flagged(m15, "M15", "swing")
+    dataset = Dataset(
+        "XAUUSD",
+        "M15",
+        "train",
+        "swing",
+        data["time_utc"].iloc[0],
+        data["time_utc"].iloc[-1] + pd.Timedelta(days=1),
+        data,
+        NO_WINDOWS,
+    )
+    result = run_backtest(
+        Scripted({0: [MOVES]}, timeframes=("M15",)),
+        dataset,
+        costs,
+        LIMITS,
+        BT,
+        exec_bars=flagged(m5, "M5", "swing"),
+        risk_rules=False,
+        optimistic_stop_moves=True,
+    )
+    t = only_trade(result)
+    # kept going past the move bar; exits later when a bar opens below the new stop
+    assert (t["exit_reason"], t["stop_stage"], t["tie"]) == ("sl_gap", 1, "none")
+    assert result.counts.get("tie_move_same_bar", 0) == 0
