@@ -25,6 +25,15 @@ Not run as strategy experiments (no run counted):
 - **H3 (oil costs)** is answered from cost-per-trade data already measured (random baselines at M15, H1, H4), not by new strategy runs.
 - **H5 (GoldSR EA)** waits for Usama's rules.
 
+## H5 pre-registration (written before the runs, 2026-10-01)
+
+| Id | Variant | Symbol | Split | Criterion |
+|---|---|---|---|---|
+| E0021 | goldsr (EA v2.4 defaults frozen), **re-entry ON** (EA default) | XAUUSD | train | standard, percentile vs random trades with the **same long/short mix** |
+| E0022 | goldsr, **re-entry OFF** | XAUUSD | train | same |
+
+Standard = ≥ 100 trades, expectancy > 0 R after costs, 95% CI lower bound > 0, ≥ 95th percentile of the mixed baseline (per seed: long-only and short-only gold M15 swing random baselines weighted by the run's long share), cost stress positive. Our risk engine (0.5% risk, 2% daily loss, news blackout, stop 0.5–3 ATR, RR ≥ 2) overrides the EA's own risk settings. The EA's defaults may be optimizer-fitted, so **validation (one attempt) is the real judge** for a variant that passes train. Reported regardless of verdict: exit distribution (SL / breakeven / TP1-lock / TP3 = first stop / stop after move 1 / stop after move 2 / target), long vs short, and the gold uptrend caveat.
+
 ## Summary (Usama's decisions 2026-09-30)
 
 | Hypothesis | Status | Evidence |
