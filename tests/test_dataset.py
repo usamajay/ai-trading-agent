@@ -31,6 +31,10 @@ SETTINGS = BacktestSettings(
     no_entry_minutes_after_open=15,
     friday_cutoff_ny="16:30",
     exclusions_source_timeframe="M5",
+    spread_margin_multiple=1.0,
+    spread_margin_points=0,
+    slippage_spread_multiple=0.2,
+    commission_per_lot_usd=0.0,
 )
 NONE = DataExclusions(excluded_windows=[], no_trade_windows=[], keep_gaps=[])
 
