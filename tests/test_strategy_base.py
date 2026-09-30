@@ -100,6 +100,7 @@ class Demo(BaseStrategy):
     style = "intraday"
     timeframes = ("M15", "H1")
     suited_regimes = ("trending",)
+    lookback_bars = 50
     param_specs = (
         ParamSpec("atr_mult", 0.5, 3.0, "stop distance in ATRs"),
         ParamSpec("rr", 1.5, 4.0, "take-profit distance as a multiple of the stop"),
@@ -132,6 +133,7 @@ def test_param_spec_needs_description_and_range() -> None:
         (lambda s: setattr(s, "timeframes", ("H1", "H1")), "twice"),
         (lambda s: setattr(s, "style", "hft"), "style"),
         (lambda s: setattr(s, "version", ""), "name and a version"),
+        (lambda s: setattr(s, "lookback_bars", 0), "lookback_bars"),
         (
             lambda s: setattr(
                 s, "param_specs", tuple(ParamSpec(f"p{i}", 0, 1, "x") for i in range(6))

@@ -79,6 +79,7 @@ class BacktestSettings(_Strict):
     spread_margin_points: float = Field(ge=0)
     slippage_spread_multiple: float = Field(ge=0, le=5.0)
     commission_per_lot_usd: float = Field(ge=0)  # round turn (open + close)
+    starting_balance: float = Field(gt=0)  # account currency
 
     @property
     def friday_cutoff_minutes(self) -> int:

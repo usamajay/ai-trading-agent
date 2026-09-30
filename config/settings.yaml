@@ -27,3 +27,4 @@ backtest:                        # backtest engine (docs/PHASE_2_TASKS.md)
   spread_margin_points: 0        # extra points added on top of the multiple
   slippage_spread_multiple: 0.2  # slippage on market/stop entries and stop-loss exits
   commission_per_lot_usd: 0.0    # round turn; Exness Standard has no commission
+  starting_balance: 10000        # USD, fixed for every backtest (Usama, 2026-09-30)

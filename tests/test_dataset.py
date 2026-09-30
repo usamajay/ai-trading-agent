@@ -35,6 +35,7 @@ SETTINGS = BacktestSettings(
     spread_margin_points=0,
     slippage_spread_multiple=0.2,
     commission_per_lot_usd=0.0,
+    starting_balance=10_000,
 )
 NONE = DataExclusions(excluded_windows=[], no_trade_windows=[], keep_gaps=[])
 
@@ -255,3 +256,13 @@ def test_load_dataset_refuses_oos_and_unfrozen(store: BarStore) -> None:
             "train",
             "swing",
         )
+
+
+def test_entry_flags_say_why(bars: pd.DataFrame) -> None:
+    f = flags(bars, flat_before_weekend=True)
+    reopen = f.loc["2026-01-06 18:05"]
+    assert reopen["after_reopen"] and not reopen["entry_blocked"]  # wait, not a hard block
+    friday = f.loc["2026-01-09 16:40"]
+    assert friday["flatten"] and friday["entry_blocked"] and not friday["after_reopen"]
+    assert (f["no_new_entries"] == (f["entry_blocked"] | f["after_reopen"])).all()
+    assert not flags(bars)["flatten"].any()  # swing: never flattened for the weekend

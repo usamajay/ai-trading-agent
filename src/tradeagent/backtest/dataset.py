@@ -6,9 +6,13 @@ Flags added to every bar:
   excluded        an excluded window overlaps this bar or the time since the previous
                   bar (a data hole). No signal may use a lookback containing such a
                   bar, and a trade still open when one is reached is dropped
-  no_new_entries  no entry may fill at this bar's open: warm-up, excluded, reviewed
-                  no-trade window, first minutes after a reopen, or (scalp/intraday)
-                  after the Friday cut-off
+  no_new_entries  no entry may fill at this bar's open (entry_blocked or after_reopen)
+  entry_blocked   hard block: warm-up, excluded, reviewed no-trade window, or
+                  (scalp/intraday) after the Friday cut-off
+  after_reopen    within the first minutes after a reopen (wide spreads): an entry
+                  waits until the window has passed
+  flatten         scalp/intraday only: at or after the Friday cut-off, close open
+                  trades and cancel pending orders
   gap_before      time is missing before this bar (weekend, daily break, holiday or
                   hole): a stop the open jumps past fills at the open
   gap_minutes     how long that gap is
@@ -37,7 +41,16 @@ from tradeagent.strategies.base import Style
 REOPEN_GAP_MINUTES = 30
 
 WINDOW_COLUMNS = ["start_utc", "end_utc", "source", "reason"]
-FLAG_COLUMNS = ["in_split", "excluded", "no_new_entries", "gap_before", "gap_minutes"]
+FLAG_COLUMNS = [
+    "in_split",
+    "excluded",
+    "no_new_entries",
+    "entry_blocked",
+    "after_reopen",
+    "flatten",
+    "gap_before",
+    "gap_minutes",
+]
 
 
 @dataclass(frozen=True)
@@ -122,14 +135,20 @@ def flag_bars(
     is_reopen = (gap >= REOPEN_GAP_MINUTES) | (df.index == 0)
     reopen_at = start.where(is_reopen).ffill()
     since_reopen = start - reopen_at
-    blocked |= since_reopen < pd.Timedelta(minutes=settings.no_entry_minutes_after_open)
+    after_reopen = since_reopen < pd.Timedelta(minutes=settings.no_entry_minutes_after_open)
     if flat_before_weekend:
-        blocked |= after_weekly_cutoff(start, settings.friday_cutoff_minutes)
+        flatten = after_weekly_cutoff(start, settings.friday_cutoff_minutes)
+    else:
+        flatten = pd.Series(False, index=df.index)
+    blocked |= flatten
 
     return df.assign(
         in_split=in_split,
         excluded=excluded,
-        no_new_entries=blocked,
+        no_new_entries=blocked | after_reopen,
+        entry_blocked=blocked,
+        after_reopen=after_reopen,
+        flatten=flatten,
         gap_before=gap > 0,
         gap_minutes=gap,
     )

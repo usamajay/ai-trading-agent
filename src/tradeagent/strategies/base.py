@@ -4,6 +4,8 @@
   5 tunable parameters, each with a documented range (`ParamSpec`).
 - `timeframes[0]` is the decision timeframe: the backtest steps through its bars,
   and `generate()` is called after each one closes. Other timeframes are context.
+- `lookback_bars`: how many decision-timeframe bars of history a signal depends on;
+  the engine skips signals whose lookback touches an excluded data hole.
 - `generate(ctx)` sees only closed bars through `MarketContext`, and returns 0..n
   `Signal`s, each with stop-loss, take-profit, an order type and a `why` text.
 - Optional `prepare(frames)` adds indicator columns once per run (e.g. ATR), so a
@@ -273,6 +275,7 @@ class Strategy(Protocol):
     style: Style
     timeframes: Sequence[str]  # timeframes[0] = decision timeframe
     suited_regimes: Sequence[str]  # declared, then verified by stats
+    lookback_bars: int  # decision-timeframe bars of history a signal depends on
     params: dict[str, float]  # small, documented, bounded (see param_specs)
     param_specs: Sequence[ParamSpec]
 
@@ -298,6 +301,8 @@ def check_strategy(strategy: Strategy) -> None:
         raise InvalidStrategy(f"unknown timeframes: {unknown}")
     if len(set(strategy.timeframes)) != len(strategy.timeframes):
         raise InvalidStrategy("timeframes are listed twice")
+    if strategy.lookback_bars < 1:
+        raise InvalidStrategy("lookback_bars must be declared (bars of history a signal uses)")
 
     specs = {spec.name: spec for spec in strategy.param_specs}
     if len(specs) > MAX_PARAMS:
@@ -322,6 +327,7 @@ class BaseStrategy:
     style: Style = "intraday"
     timeframes: Sequence[str] = ()  # tuples, e.g. ("M15", "H1")
     suited_regimes: Sequence[str] = ()
+    lookback_bars: int = 0  # must be set: bars of history a signal uses
     param_specs: Sequence[ParamSpec] = ()
 
     def __init__(self, **params: float) -> None:
