@@ -475,13 +475,60 @@ def window(start: str, end: str) -> pd.DataFrame:
     ).astype({"start_utc": "datetime64[ns, UTC]", "end_utc": "datetime64[ns, UTC]"})
 
 
-def test_trade_open_into_an_excluded_window_is_dropped() -> None:
-    bars = frame([(2000, 2001, 1999, 2000.5)] + [(2001, 2002, 2000.5, 2001.5)] * 4)
-    result = run(
-        Scripted({0: [LONG]}), bars, windows=window("2026-01-06 10:12", "2026-01-06 10:13")
+def hole_bars(spread: int = 0) -> pd.DataFrame:
+    """Bars 10:00 and 10:05, then nothing until 12:00: a 1h50 data hole."""
+    return frame(
+        [
+            (2000, 2001, 1999, 2000.5),
+            (2001, 2002, 2000.5, 2001.5),
+            ("2026-01-06 12:00", 1980, 1981, 1979, 1980.5),
+            (1980.5, 1981, 1980, 1980.5),
+        ],
+        spread=spread,
     )
-    assert result.trades.empty
-    assert result.counts["dropped_excluded"] == 1
+
+
+def test_trade_open_at_a_data_hole_closes_before_it() -> None:
+    # Spread 100 points (0.1), slippage 0.2 x spread = 0.02.
+    settings = BT.model_copy(update={"slippage_spread_multiple": 0.2})
+    hole = window("2026-01-06 10:10", "2026-01-06 12:00")
+    result = run(Scripted({0: [LONG]}), hole_bars(spread=100), settings=settings, windows=hole)
+    t = only_trade(result)  # kept in the results, not dropped
+    assert t["exit_reason"] == "data_gap"
+    assert t["exit_time"] == ny("2026-01-06 10:10")  # close of the last bar before the hole
+    assert t["entry_price"] == pytest.approx(2001.12)  # ask 2001.1 + slippage
+    assert t["exit_price"] == pytest.approx(2001.48)  # bid close 2001.5 - slippage
+    assert result.counts["closed_data_gap"] == 1
+    assert result.final_balance == pytest.approx(10_000 + t["net_pnl"])
+    assert "dropped_excluded" not in result.counts
+
+
+def test_short_at_a_data_hole_closes_on_the_ask() -> None:
+    settings = BT.model_copy(update={"slippage_spread_multiple": 0.2})
+    short = {"direction": "short", "stop_loss": 2006.0, "take_profit": 1990.0}
+    hole = window("2026-01-06 10:10", "2026-01-06 12:00")
+    t = only_trade(
+        run(Scripted({0: [short]}), hole_bars(spread=100), settings=settings, windows=hole)
+    )
+    assert t["exit_reason"] == "data_gap"
+    assert t["exit_price"] == pytest.approx(2001.62)  # ask 2001.5 + 0.1, + slippage 0.02
+
+
+def test_data_gap_close_uses_the_last_m5_bar_for_higher_timeframes() -> None:
+    m5 = frame(
+        [(2000, 2001, 1999, 2000.5)] * 3
+        + [(2001, 2002, 2000.5, 2001.5), (2001.5, 2002, 2001, 2001.8)]
+    )
+    m5 = pd.concat(
+        [m5, frame([(1980, 1981, 1979, 1980.5)] * 3, start="2026-01-06 12:00")], ignore_index=True
+    )
+    hole = window("2026-01-06 10:25", "2026-01-06 12:00")
+    result = run(
+        Scripted({0: [LONG]}, timeframes=("M15",)), aggregate(m5, 15), exec_m5=m5, windows=hole
+    )
+    t = only_trade(result)
+    assert t["exit_reason"] == "data_gap"
+    assert (t["exit_time"], t["exit_price"]) == (ny("2026-01-06 10:25"), 2001.8)  # M5 10:20 close
 
 
 def test_signals_whose_lookback_touches_an_excluded_window_are_skipped() -> None:

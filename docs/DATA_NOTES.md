@@ -75,7 +75,7 @@ Oil gaps are relatively about twice as large as gold's.
 | Fri 28 Nov 2025 | Real exchange outage (CME, Black Friday); huge spreads (gold 3352 pts = 21× normal) | **No-trade window**: 2025-11-27 23:00 → 2025-11-28 19:45 UTC (no new entries) |
 | Several 5–55 min holes (e.g. 3 Jan 2025 06:50, 55 min) | Short broker feed outages; both symbols at the same time | Gap-through rule |
 
-**Rule for data holes:** a backtest must not treat bars on either side of a hole as consecutive. Phase 2 will read `data_quality_log`. Any trade whose holding period overlaps a `gap_intraday` longer than 1 hour is excluded, and signals whose lookback window contains such a hole are skipped, **unless a reviewed decision in `DECISIONS.md` says otherwise** (like the 2024-12-08 late open). New, unreviewed gaps are excluded by default. Exclusions are reported in the backtest results.
+**Rule for data holes:** a backtest must not treat bars on either side of a hole as consecutive. Holes are found with the same gap rules as `data_quality_log` (`find_gaps` on M5). A trade still open when the backtest reaches a `gap_intraday` longer than 1 hour is closed at the last bar's close before the hole (exit reason `data_gap`, kept in the results), and signals whose lookback window contains such a hole are skipped, **unless a reviewed decision in `DECISIONS.md` says otherwise** (like the 2024-12-08 late open). New, unreviewed gaps are excluded by default. Exclusions are reported in the backtest results.
 
 ## 6. Spikes
 

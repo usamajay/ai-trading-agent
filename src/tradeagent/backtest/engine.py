@@ -18,8 +18,10 @@ How one run works, bar by bar on the strategy's decision timeframe:
 Fills: bars are bid prices; `CostModel` turns them into ask/bid sides, adds the
 spread margin and slippage. A bar that opens beyond the stop fills at that open
 (the loss can exceed 1R). Take-profits fill at their price, never better.
-Trades still open when an excluded bar (data hole) is reached are dropped and
-counted. Nothing here places orders: it is a simulation on stored bars.
+A trade still open when an excluded bar (data hole) is reached is closed at the
+close of the last bar before the hole (exit side + slippage), exit reason
+"data_gap"; it stays in the results. Nothing here places orders: it is a
+simulation on stored bars.
 """
 
 from collections import Counter
@@ -60,7 +62,7 @@ TRADE_COLUMNS = [
     "lots",
     "stop_loss",
     "take_profit",
-    "exit_reason",  # tp, sl, sl_gap, weekend_close, time, end_of_data
+    "exit_reason",  # tp, sl, sl_gap, weekend_close, time, end_of_data, data_gap
     "gross_pnl",  # price P&L incl. spread and slippage, before swap/commission
     "spread_cost",
     "slippage_cost",
@@ -159,6 +161,9 @@ class _Run:
     trades: list[dict[str, object]] = field(default_factory=list)
     curve: list[tuple[pd.Timestamp, float]] = field(default_factory=list)
     counts: Counter[str] = field(default_factory=Counter)
+    # Last execution bar processed (bars, index, decision index): where a trade is
+    # closed when the next bar turns out to be the far side of a data hole.
+    last_bar: tuple[_Bars, int, int] | None = None
 
     # --- main loop -----------------------------------------------------------------
 
@@ -218,14 +223,23 @@ class _Run:
         return self.decision, i, i + 1
 
     def _process(self, b: _Bars, j: int, i: int) -> None:
-        if b.excluded[j]:
-            if self.position is not None:
-                self.counts["dropped_excluded"] += 1
-                self.position = None
-            if self.order is not None:
-                self.counts["cancelled_excluded"] += 1
-                self.order = None
+        if not b.excluded[j]:
+            self._process_bar(b, j, i)
+            self.last_bar = (b, j, i)
             return
+        # Far side of a data hole: close at the last bar we have before it.
+        if self.position is not None:
+            assert self.last_bar is not None  # a position always has an earlier bar
+            last, k, last_i = self.last_bar
+            direction = self.position.order.signal.direction
+            price = self.costs.exit_side(direction, last.close[k], last.spread[k])
+            self._close(price, "data_gap", last, k, last_i, slip=True, at_end=True)
+            self.counts["closed_data_gap"] += 1
+        if self.order is not None:
+            self.counts["cancelled_excluded"] += 1
+            self.order = None
+
+    def _process_bar(self, b: _Bars, j: int, i: int) -> None:
         if b.flatten[j]:
             if self.position is not None:
                 p = self.position
