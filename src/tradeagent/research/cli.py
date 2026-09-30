@@ -68,6 +68,9 @@ def register_cmd(
     direction: Annotated[str, typer.Option("--direction", help="both, long or short")] = "both",
     style: Annotated[str, typer.Option("--style", help="intraday or swing (default: own)")] = "",
     param: Annotated[list[str] | None, typer.Option("--param", help="name=value")] = None,
+    regimes: Annotated[
+        str, typer.Option("--regimes", help="Trade only in these regimes, or 'suited'")
+    ] = "",
     criterion: Annotated[
         str, typer.Option("--criterion", help="JSON success criterion (default: standard)")
     ] = STANDARD_CRITERION,
@@ -94,6 +97,7 @@ def register_cmd(
             direction=direction,  # type: ignore[arg-type]
             style=style or None,  # type: ignore[arg-type]
             params=_parse_params(param),
+            regimes=tuple(r.strip() for r in regimes.split(",") if r.strip()),
         )
         crit = Criterion.model_validate_json(criterion)
         eid = register(conn, cfg, hypothesis, spec, symbol, split, crit, seed, parent)
