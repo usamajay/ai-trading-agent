@@ -162,6 +162,7 @@ def list_cmd() -> None:
     import pandas as pd
 
     from tradeagent.research.experiments import list_experiments, research_run_total
+    from tradeagent.strategies.variants import VariantSpec
 
     _, conn = _db()
     try:
@@ -178,14 +179,14 @@ def list_cmd() -> None:
     typer.echo("")
     for e in exps.to_dict("records"):
         spec = json.loads(e["variant_json"])
-        m = json.loads(e["metrics_json"])["metrics"] if e["metrics_json"] else {}
+        raw = e["metrics_json"]  # NULL (not run yet) arrives from pandas as NaN
+        m = json.loads(raw)["metrics"] if isinstance(raw, str) else {}
         exp = m.get("expectancy_r")
         shown = "-" if exp is None else f"{exp:+.3f} R"
         typer.echo(
             f"{e['experiment_id']} {e['hypothesis_id']:<4} {e['dataset_split']:<10} "
-            f"{e['symbol']:<7} {e['status']:<10} {e['verdict'] or '-':<5} {shown:>9} "
-            f"{spec['strategy']} tf={'/'.join(spec['timeframes']) or 'own'} "
-            f"dir={spec['direction']}"
+            f"{e['symbol']:<7} {e['status']:<10} {e['verdict'] if isinstance(e['verdict'], str) else '-':<5} {shown:>9} "
+            f"{VariantSpec.from_dict(spec).name()}"
         )
     typer.echo(f"\nresearch runs so far (strict multiple-testing total): {total}")
 
