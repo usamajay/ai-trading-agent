@@ -230,7 +230,7 @@ For each signal, estimate (from out-of-sample history of that strategy in the sa
 
 | Output | How |
 |---|---|
-| `p_win` = P(TP hit before SL) | Empirical rate in similar conditions, shrunk toward 50% when sample is small (Bayesian Beta prior) |
+| `p_win` = P(TP hit before SL) | Empirical rate in similar conditions, shrunk toward the **break-even win rate** (1 + cost_r) / (RR + 1) when the sample is small (Bayesian Beta prior); the prior alone gives EV 0 |
 | `p_loss` | 1 − p_win − p_timeout |
 | `avg_win_r`, `avg_loss_r` | From history, in R units (1R = distance to stop) |
 | `ev_r` | p_win·avg_win_r − p_loss·avg_loss_r − cost_r |
@@ -241,7 +241,7 @@ For each signal, estimate (from out-of-sample history of that strategy in the sa
 
 ### 5.1 How it is built (Phase 5, `src/tradeagent/prob/`)
 - Outcome of a closed trade: take-profit = win, stop-loss = loss, any other exit = timeout. History R multiples are **net of costs**, so `ev_r = p_win·avg_win_r − p_loss·avg_loss_r + p_timeout·avg_timeout_r − extra_cost_r` (`extra_cost_r` = 0 unless a signal costs more than its history).
-- Prior Beta(k/2, k/2) with `prior_strength` k = 20 (`settings.yaml`); credible interval at `credible_level` 90%, its lower bound is checked against `min_p_win_lower`.
+- Prior Beta(k·p0, k·(1−p0)) centred on the break-even win rate p0 = (1 + c)/(RR + 1), c = typical cost at entry in R (spread + slippage + commission; swap is unknown at entry), with `prior_strength` k = 20 (`settings.yaml`); with no history a win is taken as RR − c and a loss as 1 + c, so the prior alone predicts EV 0; credible interval at `credible_level` 90%, its lower bound is checked against `min_p_win_lower`.
 - Entry gate reason codes: `sample_small`, `p_win_low`, `ev_low` (RR is checked by the risk engine).
 - Calibration (`tradeagent prob calibrate`): each trade is predicted only from trades of the same run that closed before it entered; Brier score vs always-50% and vs the hindsight constant; reliability table; what the gate would have allowed. Out-of-sample runs are refused.
 - Regime conditioning waits for the regime detector (Phase 8); until then the history key is `all`.

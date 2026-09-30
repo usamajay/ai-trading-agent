@@ -2,8 +2,11 @@
 
 - Outcome of a closed trade: `tp` exit = win, `sl` exit = loss, anything else
   (weekend, Friday or time exits) = timeout.
-- p_win = mean of the Beta posterior with prior Beta(k/2, k/2): with few trades the
-  estimate is pulled toward 50%, with many it approaches the observed rate.
+- p_win = mean of the Beta posterior with a prior of strength k centred on the
+  **break-even win rate** p0 = (1 + c) / (RR + 1) for the signal's reward:risk RR and
+  typical cost c in R (a win pays RR - c, a loss costs 1 + c): with few trades the
+  estimate is pulled toward break-even (EV 0), with many it approaches the observed
+  rate. (Usama, 2026-09-30: more cautious than SPEC's original 50%.)
 - The credible interval on p_win comes from the same posterior; its lower bound is
   what the entry rule checks. confidence = 1 - interval width.
 - History R multiples are net of costs, so ev_r needs no separate cost term;
@@ -25,6 +28,13 @@ def outcome(exit_reason: str) -> str:
     if exit_reason == "sl":
         return LOSS
     return TIMEOUT
+
+
+def break_even_p_win(planned_rr: float, cost_r: float) -> float:
+    """Win rate at which EV is 0 when a win pays RR - c and a loss costs 1 + c."""
+    if planned_rr <= 0 or cost_r < 0:
+        raise ValueError("planned_rr must be > 0 and cost_r >= 0")
+    return min(max((1 + cost_r) / (planned_rr + 1), 0.01), 0.99)
 
 
 @dataclass(frozen=True)
@@ -55,6 +65,7 @@ def estimate(
     prior_strength: float,
     credible_level: float,
     planned_rr: float,
+    cost_r: float = 0.0,
     extra_cost_r: float = 0.0,
 ) -> Estimate:
     """Estimate for a new signal from closed trades (net R) of the same setup."""
@@ -66,15 +77,16 @@ def estimate(
     wins, losses = int((kinds == WIN).sum()), int((kinds == LOSS).sum())
     timeouts = n - wins - losses
 
-    a = prior_strength / 2 + wins
-    b = prior_strength / 2 + (n - wins)
+    p0 = break_even_p_win(planned_rr, cost_r)
+    a = prior_strength * p0 + wins
+    b = prior_strength * (1 - p0) + (n - wins)
     tail = (1 - credible_level) / 2
     p_win = a / (a + b)
     p_timeout = timeouts / n if n else 0.0
     p_loss = 1.0 - p_win - p_timeout
 
-    avg_win = float(r[kinds == WIN].mean()) if wins else planned_rr
-    avg_loss = float(-r[kinds == LOSS].mean()) if losses else 1.0
+    avg_win = float(r[kinds == WIN].mean()) if wins else planned_rr - cost_r
+    avg_loss = float(-r[kinds == LOSS].mean()) if losses else 1.0 + cost_r
     avg_timeout = float(r[kinds == TIMEOUT].mean()) if timeouts else 0.0
     ev = p_win * avg_win - p_loss * avg_loss + p_timeout * avg_timeout - extra_cost_r
     return Estimate(

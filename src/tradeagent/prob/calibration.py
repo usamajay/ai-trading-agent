@@ -29,10 +29,18 @@ def planned_rr(trades: pd.DataFrame) -> pd.Series:
     return reward / risk
 
 
+def entry_cost_r(trades: pd.DataFrame) -> pd.Series:
+    """Typical cost of each trade in R, as known at entry: spread + slippage + commission."""
+    return (trades["spread_cost"] + trades["slippage_cost"] + trades["commission"]) / trades[
+        "risk_usd"
+    ]
+
+
 def walk_forward(trades: pd.DataFrame, rules: EntryRules) -> pd.DataFrame:
     """One row per trade: prediction from earlier closed trades, gate result, outcome."""
     t = trades.sort_values("entry_time").reset_index(drop=True)
     rr = planned_rr(t)
+    cost = entry_cost_r(t)
     rows = []
     for i, trade in t.iterrows():
         known = t[t["exit_time"] < trade["entry_time"]]
@@ -42,6 +50,7 @@ def walk_forward(trades: pd.DataFrame, rules: EntryRules) -> pd.DataFrame:
             prior_strength=rules.prior_strength,
             credible_level=rules.credible_level,
             planned_rr=float(rr.iloc[i]),
+            cost_r=float(cost.iloc[i]),
         )
         codes = [r.code for r in entry_rejections(est, rules)]
         rows.append(
