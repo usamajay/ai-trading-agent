@@ -11,6 +11,10 @@ backtest_app = typer.Typer(
     help="Backtesting (research only; never places orders).", no_args_is_help=True
 )
 app.add_typer(backtest_app, name="backtest")
+risk_app = typer.Typer(
+    help="Risk engine (read-only view of limits and state).", no_args_is_help=True
+)
+app.add_typer(risk_app, name="risk")
 
 
 @app.callback()
@@ -938,6 +942,117 @@ def backtest_compare(
             f"{verdict(r)}"
         )
     typer.echo("vs random = % of 100 random-baseline runs with a lower expectancy")
+
+
+@app.command("kill")
+def kill(
+    reason: Annotated[
+        str, typer.Option("--reason", help="Why (required to activate or clear).")
+    ] = "",
+    status: Annotated[
+        bool, typer.Option("--status", help="Only show whether it is active.")
+    ] = False,
+    clear: Annotated[
+        bool, typer.Option("--clear", help="Remove the kill switch (human decision).")
+    ] = False,
+) -> None:
+    """Kill switch: stop all trading now (creates the KILL file). SPEC §6."""
+    from tradeagent.config import load_config, project_path
+    from tradeagent.data.store import connect_db
+    from tradeagent.provenance import git_commit
+    from tradeagent.risk.killswitch import KillSwitch
+    from tradeagent.risk.state import log_risk_event
+    from tradeagent.timeutil import utc_now
+
+    ks = KillSwitch()
+    if status:
+        info = ks.info()
+        if info is None and not ks.active():
+            typer.echo("Kill switch: off")
+        else:
+            typer.secho(f"Kill switch: ON ({info})", fg=typer.colors.RED, bold=True)
+        return
+    if not reason.strip():
+        typer.secho("--reason is required", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+    cfg = load_config()
+    now = utc_now()
+    conn = connect_db(project_path(cfg.settings.storage.sqlite_path))
+    try:
+        if clear:
+            ks.clear(reason)
+            log_risk_event(
+                conn,
+                now,
+                f"kill_switch_cleared: {reason}",
+                None,
+                None,
+                "kill",
+                git_commit(),
+                cfg.config_hash,
+            )
+            typer.secho("Kill switch cleared (logged).", fg=typer.colors.YELLOW)
+        else:
+            ks.activate(reason, "cli", now)
+            log_risk_event(
+                conn,
+                now,
+                f"kill_switch: {reason}",
+                None,
+                None,
+                "kill",
+                git_commit(),
+                cfg.config_hash,
+            )
+            typer.secho(
+                "KILL SWITCH ON: all trading stopped (logged).", fg=typer.colors.RED, bold=True
+            )
+    finally:
+        conn.close()
+
+
+@risk_app.command("status")
+def risk_status() -> None:
+    """Limits in force (config/risk.yaml), kill switch, and the saved paper state."""
+    from tradeagent.config import load_config, project_path
+    from tradeagent.data.store import connect_db
+    from tradeagent.risk.killswitch import KillSwitch
+    from tradeagent.risk.state import load_state
+    from tradeagent.timeutil import utc_now
+
+    cfg = load_config()
+    r = cfg.risk
+    typer.secho("Limits (config/risk.yaml, read only)", bold=True)
+    typer.echo(
+        f"  risk per trade {r.risk_per_trade_pct}% | daily loss {r.max_daily_loss_pct}% | "
+        f"weekly loss {r.max_weekly_loss_pct}% | max drawdown {r.max_drawdown_pct}%"
+    )
+    typer.echo(
+        f"  positions {r.max_open_positions} total, {r.max_open_per_symbol} per symbol | "
+        f"loss streak {r.max_consecutive_losses} -> pause {r.consecutive_loss_pause_hours} h"
+    )
+    typer.echo(
+        f"  min RR {r.min_reward_risk} | stop {r.sl_atr_min}-{r.sl_atr_max} x ATR | "
+        f"spread <= {r.max_spread_multiple} x median | news blackout "
+        f"{r.news_blackout_minutes} min | correlation limit {r.correlation_limit}"
+    )
+    ks = KillSwitch()
+    typer.echo("Kill switch: " + ("ON " + str(ks.info()) if ks.active() else "off"))
+    conn = connect_db(project_path(cfg.settings.storage.sqlite_path))
+    try:
+        state = load_state(conn)
+    finally:
+        conn.close()
+    if state is None:
+        typer.echo("Account state: none saved yet (paper trading starts in Phase 8)")
+        return
+    now = utc_now()
+    typer.echo(
+        f"Account state: equity {state.equity:,.2f}, peak {state.peak_equity:,.2f} "
+        f"(drawdown {state.drawdown_pct():.2f}%), open positions {len(state.positions)}"
+    )
+    blocks = state.blocks(now)
+    typer.echo("Stops in force: " + ("; ".join(d for _, d in blocks) if blocks else "none"))
 
 
 def _fmt_day(ts: object) -> str:

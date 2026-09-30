@@ -290,6 +290,15 @@ CREATE TABLE IF NOT EXISTS risk_events (
     config_hash TEXT NOT NULL
 );
 
+-- Current risk-engine state for paper/live (Phase 4): one JSON document per key.
+CREATE TABLE IF NOT EXISTS risk_state (
+    key TEXT PRIMARY KEY,
+    value_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    git_commit TEXT NOT NULL,
+    config_hash TEXT NOT NULL
+);
+
 -- Backtest runs (Phase 2). Trades live in output_dir/trades.parquet, not in `trades`
 -- (that table is for paper/demo/live). run_number = how many runs this strategy
 -- (by name, any version/params) has had on this split, counting this one: the
@@ -337,6 +346,7 @@ TABLES = (
     "approvals",
     "risk_events",
     "backtest_runs",
+    "risk_state",
 )
 
 

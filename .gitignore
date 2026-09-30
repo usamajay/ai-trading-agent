@@ -16,3 +16,4 @@ dist/
 mlruns/
 .vscode/
 KILL
+.coverage
