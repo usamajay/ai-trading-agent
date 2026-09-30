@@ -62,8 +62,8 @@ Sources: SPEC §2.3 (features/, strategies/), §4 (interface, ≤ 5 parameters, 
 - ✅ 3.9: `backtest/compare.py` + `backtest compare`; report `docs/reports/PHASE_3_STRATEGIES.md`. Result: **no strategy has an edge on train with defaults**; all fail the cost stress; none is clearly better than random (best: compression breakout, 82–87th percentile).
 - ✅ 3.10: README, CLAUDE.md, DECISIONS.
 
-**Phase 3 is done (2026-09-30)**, except the human review of the strategy report.
+**Phase 3 is done (2026-09-30)**; strategy report approved by Usama.
 
 ## Phase 3 is done when
 - 5 strategies + baseline are built, each with tests, a PASS look-ahead check on real data, and a train backtest report for XAUUSD and USOIL.
-- The strategy report is written and reviewed with Usama. **(pending: needs Usama)**
+- The strategy report is written and reviewed with Usama. ✅ (approved 2026-09-30)

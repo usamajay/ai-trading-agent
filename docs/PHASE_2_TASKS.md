@@ -117,7 +117,7 @@ Plan approved by Usama on 2026-09-30, with the additions marked **(added)**.
 ## Phase 2 is done when
 - Engine, costs and metrics built, with hand-checked tests; look-ahead, truncation and t+1-fill tests pass.
 - Baseline report for both symbols reviewed with Usama, and the sanity check passes (random ≈ −costs).
-- Usama can explain in his own words: what 1R is, why stops can lose more than 1R over a weekend, and why the random baseline should lose money. **(pending: needs Usama)**
+- Usama can explain in his own words: what 1R is, why stops can lose more than 1R over a weekend, and why the random baseline should lose money. ✅ (2026-09-30, see DECISIONS.md)
 
 ## Progress
 - ✅ 2.1 (2026-09-30): `data/market_hours.py` (shared with validation), `data/resample.py`, ATR in `features/indicators.py` (moved forward from 2.3), `tradeagent data resample-check`. Real data: NY-close D1 bars per weekday Mon 155 / Tue 157 / Wed 154 / Thu 154 / Fri 153 / Sun 0; median D1 ATR(14) XAUUSD 42.0 (broker with stubs 37.2, without 41.3), USOIL 2.11 (1.81 / 2.07). Partial days are US holidays, the 2024-12-09 late open, the 2025-06-19 hole, the 2025-11-28 outage and the data edges.
@@ -133,7 +133,7 @@ Plan approved by Usama on 2026-09-30, with the additions marked **(added)**.
 - ✅ 2.9 (2026-09-30): `random_baseline` (registered), `backtest/baseline.py` + `backtest baseline`, 100 seeds per symbol on train. **Sanity check PASS**: expectancy gold −0.074 R vs cost 0.078 R, oil −0.167 R vs cost 0.174 R, i.e. ≈ 0 before costs. Report: `docs/reports/PHASE_2_BASELINE.md`. Look-ahead check PASS on real data; the same `backtest run` twice gave identical results (command-level ✅ for 2.8). Found and fixed: intraday trades held over holiday weekends (Black Friday, Good Friday).
 - ✅ 2.10 (2026-09-30): README (backtest commands, data folders), CLAUDE.md (working mode, commands), SPEC §4/§7.1 synced, DECISIONS entries.
 
-**Phase 2 is done (2026-09-30)**, except the human check below: Usama explaining 1R, weekend losses beyond 1R, and why random loses money (and reviewing the baseline report).
+**Phase 2 is done (2026-09-30)**, including Usama's explanation check and baseline report review.
 
 ## Still open
-- **USOIL unreviewed gaps (2.2):** 5 unexpected gaps > 1 h, all in train, excluded by default (listed by `tradeagent backtest splits`). Usama may review them; excluding is the safe default.
+- ~~USOIL unreviewed gaps (2.2)~~: closed 2026-09-30, Usama chose to keep all 5 excluded.

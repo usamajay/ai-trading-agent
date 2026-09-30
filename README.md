@@ -18,8 +18,8 @@ An autonomous, probabilistic, risk-controlled trading **research and paper-tradi
 | 0 | Setup | ✅ done |
 | 1 | Market data + database | ✅ done |
 | 2 | Backtesting framework | ✅ done |
-| 3 | Strategy engine | ✅ done (report review pending) |
-| 4 | Risk engine | ⬜ |
+| 3 | Strategy engine | ✅ done |
+| 4 | Risk engine | ⏳ in progress |
 | 5 | Probability / EV engine | ⬜ |
 | 6 | Hypothesis generation | ⬜ |
 | 7 | Walk-forward + OOS | ⬜ |
