@@ -55,6 +55,15 @@ Sources: SPEC §2.3 (features/, strategies/), §4 (interface, ≤ 5 parameters, 
 ### 3.10 Wrap-up
 - README, CLAUDE.md commands, SPEC sync, DECISIONS entries; all tests + ruff; commit and push.
 
+## Progress
+- ✅ 3.1–3.7 (2026-09-30): indicators, structure, five strategies (all registered), 23 strategy tests (decision rules on hand-set values, look-ahead with real indicators, risk rules never rejecting their signals).
+- ✅ Look-ahead check on real data: PASS for all 5 strategies × 2 symbols.
+- ✅ 3.8: baselines M15 intraday and H1 swing, 100 seeds × 2 symbols (`data/baselines/`); `RandomBaseline` takes timeframe and style.
+- ✅ 3.9: `backtest/compare.py` + `backtest compare`; report `docs/reports/PHASE_3_STRATEGIES.md`. Result: **no strategy has an edge on train with defaults**; all fail the cost stress; none is clearly better than random (best: compression breakout, 82–87th percentile).
+- ✅ 3.10: README, CLAUDE.md, DECISIONS.
+
+**Phase 3 is done (2026-09-30)**, except the human review of the strategy report.
+
 ## Phase 3 is done when
 - 5 strategies + baseline are built, each with tests, a PASS look-ahead check on real data, and a train backtest report for XAUUSD and USOIL.
-- The strategy report is written and reviewed with Usama.
+- The strategy report is written and reviewed with Usama. **(pending: needs Usama)**

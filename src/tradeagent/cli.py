@@ -901,6 +901,45 @@ def backtest_baseline(
     typer.echo(f"saved {path}")
 
 
+@backtest_app.command("compare")
+def backtest_compare(
+    split: Annotated[str, typer.Option("--split")] = "train",
+) -> None:
+    """Latest run per strategy x symbol vs the random baseline (same timeframe and style)."""
+    from pathlib import Path
+
+    from tradeagent.backtest.compare import compare_rows, verdict
+    from tradeagent.config import load_config, project_path
+    from tradeagent.data.store import connect_db
+    from tradeagent.strategies import registry
+
+    registry.load_builtins()
+    styles = {name: registry.create(name).style for name in registry.names()}
+    cfg = load_config()
+    conn = connect_db(project_path(cfg.settings.storage.sqlite_path))
+    try:
+        rows = compare_rows(conn, project_path(Path("data/baselines")), split, styles)
+    finally:
+        conn.close()
+    if not rows:
+        typer.echo(f"No strategy runs on {split} yet.")
+        return
+    typer.echo(
+        f"{'strategy':<22} {'sym':<7} {'tf':<4} {'trades':>6} {'exp R':>7} "
+        f"{'stress':>7} {'vs random':>9}  verdict"
+    )
+    for r in rows:
+        pct = r["baseline_percentile"]
+        exp = "-" if r["expectancy_r"] is None else f"{r['expectancy_r']:.3f}"
+        stress = "-" if r["stress_expectancy_r"] is None else f"{r['stress_expectancy_r']:.3f}"
+        typer.echo(
+            f"{r['strategy']:<22} {r['symbol']:<7} {r['timeframe']:<4} {r['trades']:>6} "
+            f"{exp:>7} {stress:>7} {'-' if pct is None else f'{pct:.0f}%':>9}  "
+            f"{verdict(r)}"
+        )
+    typer.echo("vs random = % of 100 random-baseline runs with a lower expectancy")
+
+
 def _fmt_day(ts: object) -> str:
     return "-" if ts is None else f"{ts:%Y-%m-%d}"
 

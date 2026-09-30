@@ -18,7 +18,7 @@ An autonomous, probabilistic, risk-controlled trading **research and paper-tradi
 | 0 | Setup | ✅ done |
 | 1 | Market data + database | ✅ done |
 | 2 | Backtesting framework | ✅ done |
-| 3 | Strategy engine | ⏳ in progress |
+| 3 | Strategy engine | ✅ done (report review pending) |
 | 4 | Risk engine | ⬜ |
 | 5 | Probability / EV engine | ⬜ |
 | 6 | Hypothesis generation | ⬜ |
@@ -73,6 +73,9 @@ All commands are for **Windows PowerShell**, run from the project folder.
 | `uv run tradeagent backtest lookahead-check --strategy random_baseline` | Checks a strategy never uses future data |
 | `uv run tradeagent backtest baseline --symbol XAUUSD --seeds 100` | Random baseline over many seeds (about 10 min), saved to `data/baselines/` |
 | `uv run tradeagent data resample-check` | Compares our New York-close D1/H4 candles with the broker's |
+| `uv run tradeagent backtest compare` | Latest run of each strategy vs the random baseline, with a verdict |
+
+Strategies (Phase 3): `trend_ema_pullback`, `breakout_compression`, `mean_reversion_bb`, `session_breakout`, `structure_retest`, and the `random_baseline`. Results: `docs/reports/PHASE_3_STRATEGIES.md`.
 
 Out-of-sample data is locked: backtests run on `train` or `validation` only.
 
