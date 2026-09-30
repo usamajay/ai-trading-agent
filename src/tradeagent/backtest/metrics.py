@@ -222,6 +222,28 @@ def breakdown(trades: pd.DataFrame, keys: pd.Series) -> dict[str, dict[str, Any]
     }
 
 
+def direction_breakdown(trades: pd.DataFrame) -> dict[str, dict[str, Any]]:
+    """Per direction: trade stats plus average cost and swap per trade in R (H2, swap)."""
+    out = {}
+    for key, group in trades.groupby(trades["direction"].to_numpy(), sort=True):
+        stats = trade_stats(group)
+        risk = group["risk_usd"]
+        stats["avg_cost_r"] = float(
+            (
+                (
+                    group["spread_cost"]
+                    + group["slippage_cost"]
+                    - group["swap"]
+                    + group["commission"]
+                )
+                / risk
+            ).mean()
+        )
+        stats["avg_swap_paid_r"] = float((-group["swap"] / risk).mean())
+        out[str(key)] = stats
+    return out
+
+
 def min_balance_summary(result: BacktestResult) -> dict[str, float | int | None]:
     values = result.trades["min_balance"]
     return {
@@ -288,6 +310,7 @@ def compute_metrics(result: BacktestResult) -> dict[str, Any]:
         )
         if len(trades)
         else {},
+        "by_direction": direction_breakdown(trades) if len(trades) else {},
         "by_exit_reason": {str(k): int(v) for k, v in trades["exit_reason"].value_counts().items()},
         "by_regime": None,  # needs the regime detector (Phase 8)
         "counts": dict(sorted(result.counts.items())),

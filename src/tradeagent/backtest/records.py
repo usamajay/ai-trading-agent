@@ -34,19 +34,30 @@ def to_json(value: Any) -> str:
     return json.dumps(clean(value), sort_keys=True)
 
 
+# Runs of a strategy include its research variants, named `strategy[...]`.
+_SAME_BASE = "(strategy = ? OR substr(strategy, 1, length(?) + 1) = ? || '[')"
+
+
+def _base(strategy: str) -> str:
+    return strategy.split("[", 1)[0]
+
+
 def next_run_number(conn: sqlite3.Connection, strategy: str, split: str) -> int:
+    """The nth run of this strategy on `split`, counting every variant of it."""
+    b = _base(strategy)
     row = conn.execute(
-        "SELECT COUNT(*) FROM backtest_runs WHERE strategy = ? AND split = ?", (strategy, split)
+        f"SELECT COUNT(*) FROM backtest_runs WHERE {_SAME_BASE} AND split = ?", (b, b, b, split)
     ).fetchone()
     return int(row[0]) + 1
 
 
 def run_counts(conn: sqlite3.Connection, strategy: str) -> dict[str, int]:
-    """Runs of `strategy` (any version/params) per split: the variants tried so far."""
+    """Runs of `strategy` (any version/params/variant) per split: the tries so far."""
+    b = _base(strategy)
     rows = dict(
         conn.execute(
-            "SELECT split, COUNT(*) FROM backtest_runs WHERE strategy = ? GROUP BY split",
-            (strategy,),
+            f"SELECT split, COUNT(*) FROM backtest_runs WHERE {_SAME_BASE} GROUP BY split",
+            (b, b, b),
         ).fetchall()
     )
     return {split: int(rows.get(split, 0)) for split in RUN_SPLITS}

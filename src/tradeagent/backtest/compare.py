@@ -15,6 +15,7 @@ from typing import Any
 import pandas as pd
 
 from tradeagent.backtest.baseline import distribution_path
+from tradeagent.strategies.variants import base_name
 
 
 def baseline_percentile(expectancy: float, baseline: pd.Series) -> float:
@@ -47,8 +48,12 @@ def compare_rows(
         m = json.loads(run["metrics_json"])
         flags = json.loads(run["risk_flags_json"])
         t, e, c = m["trades"], m["equity"], m["costs"]
-        style = styles.get(run["strategy"], "intraday")
-        path = distribution_path(baselines_dir, run["symbol"], run["timeframe"], style, split)
+        variant = json.loads(run["params_json"] or "{}").get("__variant") or {}
+        style = variant.get("style") or styles.get(base_name(run["strategy"]), "intraday")
+        direction = variant.get("direction", "both")
+        path = distribution_path(
+            baselines_dir, run["symbol"], run["timeframe"], style, split, direction
+        )
         pct = None
         base_mean = None
         if path.is_file() and t["expectancy_r"] is not None:

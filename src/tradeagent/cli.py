@@ -4,6 +4,8 @@ from typing import Annotated
 
 import typer
 
+from tradeagent.research.cli import research_app
+
 app = typer.Typer(help="AI Trading Agent (paper mode by default).", no_args_is_help=True)
 data_app = typer.Typer(help="Market data commands (read-only).", no_args_is_help=True)
 app.add_typer(data_app, name="data")
@@ -19,6 +21,7 @@ news_app = typer.Typer(help="High-impact USD news calendar (news blackout).", no
 app.add_typer(news_app, name="news")
 prob_app = typer.Typer(help="Probability / EV engine (SPEC §5).", no_args_is_help=True)
 app.add_typer(prob_app, name="prob")
+app.add_typer(research_app, name="research")
 
 
 @app.callback()
@@ -885,6 +888,9 @@ def backtest_baseline(
     timeframe: Annotated[str, typer.Option("--timeframe", "-t")] = "M15",
     split: Annotated[str, typer.Option("--split")] = "train",
     style: Annotated[str, typer.Option("--style", help="intraday or swing")] = "intraday",
+    direction: Annotated[
+        str, typer.Option("--direction", help="both, long or short (one-direction baseline)")
+    ] = "both",
 ) -> None:
     """Random baseline over many seeds; saves the distribution to data/baselines/."""
     from pathlib import Path
@@ -894,22 +900,37 @@ def backtest_baseline(
     from tradeagent.data.store import BarStore
     from tradeagent.strategies.base import Style
 
-    if split not in ("train", "validation") or style not in ("intraday", "swing"):
-        typer.secho("split: train/validation; style: intraday/swing", fg="red", err=True)
+    if (
+        split not in ("train", "validation")
+        or style not in ("intraday", "swing")
+        or direction not in ("both", "long", "short")
+    ):
+        typer.secho(
+            "split: train/validation; style: intraday/swing; direction: both/long/short",
+            fg="red",
+            err=True,
+        )
         raise typer.Exit(code=1)
     split_name: SplitName = "train" if split == "train" else "validation"
     style_name: Style = "intraday" if style == "intraday" else "swing"
     cfg = load_config()
     store = BarStore(project_path(cfg.settings.storage.bars_dir))
     df, data_hash = baseline_distribution(
-        cfg, store, symbol, range(1, seeds + 1), split_name, timeframe, style=style_name
+        cfg,
+        store,
+        symbol,
+        range(1, seeds + 1),
+        split_name,
+        timeframe,
+        style=style_name,
+        direction=direction,
     )
     path = save_distribution(
-        df, project_path(Path("data/baselines")), symbol, timeframe, split, style
+        df, project_path(Path("data/baselines")), symbol, timeframe, split, style, direction
     )
     e = df["expectancy_r"]
     typer.echo(
-        f"{symbol} {timeframe} {style} {split}, {seeds} seeds: trades/run median "
+        f"{symbol} {timeframe} {style} {split} {direction}, {seeds} seeds: trades/run median "
         f"{df['trades'].median():.0f}; expectancy mean {e.mean():.3f} R "
         f"(sd {e.std():.3f}, 5-95% {e.quantile(0.05):.3f} to {e.quantile(0.95):.3f}); "
         f"cost/trade {df['avg_cost_r'].mean():.3f} R; data {data_hash[:12]}"

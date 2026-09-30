@@ -356,4 +356,27 @@ def connect_db(sqlite_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(sqlite_path)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    _add_missing_columns(conn)
     return conn
+
+
+# Columns added after a table was first created (SQLite: ALTER TABLE ... ADD COLUMN).
+ADDED_COLUMNS: dict[str, dict[str, str]] = {
+    "experiments": {  # Phase 6 experiment manager
+        "symbol": "TEXT",
+        "variant_json": "TEXT",
+        "success_criterion": "TEXT",
+        "status": "TEXT",
+        "run_id": "TEXT",
+        "parent_experiment_id": "TEXT",
+    },
+}
+
+
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    for table, columns in ADDED_COLUMNS.items():
+        have = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for name, kind in columns.items():
+            if name not in have:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
+    conn.commit()

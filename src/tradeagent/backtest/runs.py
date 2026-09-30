@@ -20,8 +20,8 @@ from tradeagent.backtest.runner import load_inputs, run_inputs, stressed
 from tradeagent.config import AppConfig, SplitName
 from tradeagent.data.store import BarStore
 from tradeagent.provenance import git_commit, new_run_id
-from tradeagent.strategies import registry
 from tradeagent.strategies.base import check_strategy
+from tradeagent.strategies.variants import VariantSpec, build
 from tradeagent.timeutil import fmt_utc_pkt, utc_now
 
 
@@ -47,16 +47,23 @@ def execute_run(
     params: dict[str, float],
     out_root: Path,
     enforce_account_limits: bool = False,
+    variant: VariantSpec | None = None,
 ) -> RunRecord:
-    strategy = registry.create(strategy_name, seed, params)
+    """`variant` (research): run the strategy on other timeframes / one direction / style."""
+    spec = variant or VariantSpec(strategy_name, params=params)
+    if spec.strategy != strategy_name:
+        raise ValueError(f"variant is for {spec.strategy!r}, not {strategy_name!r}")
+    params = dict(spec.params)
+    strategy = build(spec, seed)
     check_strategy(strategy)
+    strategy_name = strategy.name
     inputs = load_inputs(cfg, store, strategy, symbol, split)
     enforce = enforce_account_limits
     result = run_inputs(cfg, strategy, inputs, enforce_account_limits=enforce)
     multiple = cfg.settings.backtest.cost_stress_multiple
     stress_result = run_inputs(
         cfg,
-        registry.create(strategy_name, seed, params),
+        build(spec, seed),
         inputs,
         stressed(inputs.costs, multiple),
         enforce_account_limits=enforce,
@@ -76,7 +83,11 @@ def execute_run(
         "strategy_version": strategy.version,
         # The account-limit mode is part of how the run was made, so it is stored too.
         "params_json": json.dumps(
-            {**strategy.params, "__account_limits": "enforced" if enforce else "flags"},
+            {
+                **strategy.params,
+                "__account_limits": "enforced" if enforce else "flags",
+                **({} if spec.is_plain else {"__variant": spec.to_dict()}),
+            },
             sort_keys=True,
         ),
         "seed": seed,

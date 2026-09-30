@@ -144,16 +144,22 @@ def equity_chart(result: BacktestResult, path: Path, title: str) -> None:
 def _group_table(groups: dict[str, dict[str, Any]], heading: str) -> list[str]:
     if not groups:
         return [f"No trades to split by {heading.lower()}.", ""]
+    costs = "avg_cost_r" in next(iter(groups.values()))  # by_direction adds costs in R
+    extra_head, extra_rule = (" Cost (R) | Swap paid (R) |", "---:|---:|") if costs else ("", "")
     lines = [
-        f"| {heading} | Trades | Win rate | Expectancy (R) | Net P&L | Profit factor | Sample |",
-        "|---|---:|---:|---:|---:|---:|---|",
+        (
+            f"| {heading} | Trades | Win rate | Expectancy (R) | Net P&L | Profit factor |"
+            f"{extra_head} Sample |"
+        ),
+        f"|---|---:|---:|---:|---:|---:|{extra_rule}---|",
     ]
     for key, s in groups.items():
         sample = "insufficient" if s["insufficient_sample"] else "ok"
+        extra = f" {_num(s['avg_cost_r'], 3)} | {_num(s['avg_swap_paid_r'], 3)} |" if costs else ""
         lines.append(
             f"| {key} | {s['trades']} | {_num(s['win_rate_pct'], 1, '%')} | "
             f"{_num(s['expectancy_r'], 3)} | {_usd(s['net_pnl_usd'])} | "
-            f"{_num(s['profit_factor'])} | {sample} |"
+            f"{_num(s['profit_factor'])} |{extra} {sample} |"
         )
     return [*lines, ""]
 
@@ -321,6 +327,7 @@ def report_markdown(
         "",
         "## Breakdowns",
         "",
+        *_group_table(metrics.get("by_direction", {}), "Direction"),
         *_group_table(metrics["by_session"], "Session"),
         *_group_table(metrics["by_year"], "Year"),
         *_group_table(metrics["by_weekend_hold"], "Weekend"),

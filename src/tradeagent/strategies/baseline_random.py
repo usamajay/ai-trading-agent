@@ -39,9 +39,14 @@ class RandomBaseline(BaseStrategy):
         params: dict[str, float] | None = None,
         timeframe: str = "M15",
         style: Style = "intraday",
+        direction: str = "both",
     ) -> None:
-        """`timeframe` and `style` let the baseline match the strategy it is compared with."""
+        """`timeframe`, `style` and `direction` (both/long/short) let the baseline match
+        the strategy it is compared with."""
+        if direction not in ("both", "long", "short"):
+            raise ValueError(f"direction must be both, long or short, got {direction!r}")
         super().__init__(**{**DEFAULTS, **(params or {})})
+        self.direction = direction
         self.timeframes = (timeframe,)
         self.style = style
         self.seed = seed
@@ -60,7 +65,7 @@ class RandomBaseline(BaseStrategy):
         a = view.last("atr14")
         if enter >= self.params["p_entry"] or not np.isfinite(a) or a <= 0:
             return []
-        long = side < 0.5
+        long = side < 0.5 if self.direction == "both" else self.direction == "long"
         entry = ctx.expected_entry("long" if long else "short")
         stop = self.params["atr_mult"] * a
         target = self.params["rr"] * stop

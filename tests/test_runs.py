@@ -22,6 +22,7 @@ from tradeagent.data.store import BarStore, connect_db
 from tradeagent.features.indicators import atr
 from tradeagent.strategies import registry
 from tradeagent.strategies.base import BaseStrategy, MarketContext, Signal
+from tradeagent.strategies.variants import VariantSpec
 
 NAME = "test_seeded_random"
 
@@ -73,6 +74,7 @@ def store(tmp_path_factory: pytest.TempPathFactory) -> BarStore:
     m5 = trading_bars("2026-01-04", weeks=5)  # 5 weeks of M5, US winter time
     s.write("XAUUSD", "M5", m5)
     s.write("XAUUSD", "M15", aggregate(m5, 15))
+    s.write("XAUUSD", "H1", aggregate(m5, 60))
     return s
 
 
@@ -258,3 +260,58 @@ def test_account_limit_mode_is_recorded(
     assert json.loads(enforced.run["params_json"])["__account_limits"] == "enforced"
     report = (enforced.output_dir / "report.md").read_text(encoding="utf-8")
     assert "**Enforced** in this run" in report
+
+
+def test_variants_are_counted_under_their_base_strategy(
+    cfg: AppConfig, store: BarStore, conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    plain = run(cfg, store, conn, tmp_path)
+    longs = VariantSpec(NAME, direction="long")
+    rec = execute_run(cfg, store, conn, NAME, "XAUUSD", "train", 1, {}, tmp_path, variant=longs)
+    assert rec.run["strategy"] == f"{NAME}[dir=long]"
+    assert rec.run["run_number"] == 2  # the plain run and this variant: two tries
+    assert rec.counts["train"] == 2 and run_counts(conn, NAME)["train"] == 2
+    assert set(rec.result.trades["direction"]) == {"long"}
+    assert len(rec.result.trades) < len(plain.result.trades)
+    params = json.loads(rec.run["params_json"])
+    assert VariantSpec.from_dict(params["__variant"]) == longs
+    assert "__variant" not in json.loads(plain.run["params_json"])
+
+
+def test_timeframe_variant_runs_on_other_bars(
+    cfg: AppConfig, store: BarStore, conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    spec = VariantSpec(NAME, timeframes=("H1",), style="swing")
+    rec = execute_run(cfg, store, conn, NAME, "XAUUSD", "train", 1, {}, tmp_path, variant=spec)
+    assert rec.run["timeframe"] == "H1" and rec.run["strategy"] == f"{NAME}[tf=H1,style=swing]"
+    assert len(rec.result.trades) > 0
+
+
+def test_variant_for_another_strategy_is_refused(
+    cfg: AppConfig, store: BarStore, conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    with pytest.raises(ValueError, match="variant is for"):
+        execute_run(
+            cfg,
+            store,
+            conn,
+            NAME,
+            "XAUUSD",
+            "train",
+            1,
+            {},
+            tmp_path,
+            variant=VariantSpec("other"),
+        )
+
+
+def test_direction_breakdown_in_metrics_and_report(
+    cfg: AppConfig, store: BarStore, conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    rec = run(cfg, store, conn, tmp_path)
+    by_dir = rec.metrics["by_direction"]
+    assert set(by_dir) == {"long", "short"}
+    assert sum(g["trades"] for g in by_dir.values()) == rec.metrics["trades"]["trades"]
+    assert all(g["avg_cost_r"] > 0 for g in by_dir.values())
+    report = (rec.output_dir / "report.md").read_text(encoding="utf-8")
+    assert "| Direction | Trades" in report and "Swap paid (R)" in report

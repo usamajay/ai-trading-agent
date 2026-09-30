@@ -28,11 +28,12 @@ def baseline_distribution(
     timeframe: str = "M15",
     params: dict[str, float] | None = None,
     style: Style = "intraday",
+    direction: str = "both",
 ) -> tuple[pd.DataFrame, str]:
     """(one row per seed, data fingerprint). The bars are loaded once for all seeds."""
 
     def make(seed: int) -> RandomBaseline:
-        return RandomBaseline(seed, params, timeframe, style)
+        return RandomBaseline(seed, params, timeframe, style, direction)
 
     inputs = load_inputs(cfg, store, make(0), symbol, split)
     hard = stressed(inputs.costs, cfg.settings.backtest.cost_stress_multiple)
@@ -68,8 +69,12 @@ def baseline_distribution(
     return pd.DataFrame(rows), inputs.data_hash
 
 
-def distribution_path(out_dir: Path, symbol: str, timeframe: str, style: str, split: str) -> Path:
-    return out_dir / f"{symbol}_{timeframe}_{style}_{split}.parquet"
+def distribution_path(
+    out_dir: Path, symbol: str, timeframe: str, style: str, split: str, direction: str = "both"
+) -> Path:
+    """`<SYMBOL>_<TF>_<style>_<split>.parquet`; one-direction baselines add `_long`/`_short`."""
+    tail = "" if direction == "both" else f"_{direction}"
+    return out_dir / f"{symbol}_{timeframe}_{style}_{split}{tail}.parquet"
 
 
 def save_distribution(
@@ -79,8 +84,9 @@ def save_distribution(
     timeframe: str,
     split: str,
     style: str = "intraday",
+    direction: str = "both",
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = distribution_path(out_dir, symbol, timeframe, style, split)
+    path = distribution_path(out_dir, symbol, timeframe, style, split, direction)
     df.to_parquet(path, index=False)
     return path
