@@ -15,6 +15,8 @@ risk_app = typer.Typer(
     help="Risk engine (read-only view of limits and state).", no_args_is_help=True
 )
 app.add_typer(risk_app, name="risk")
+news_app = typer.Typer(help="High-impact USD news calendar (news blackout).", no_args_is_help=True)
+app.add_typer(news_app, name="news")
 
 
 @app.callback()
@@ -1053,6 +1055,61 @@ def risk_status() -> None:
     )
     blocks = state.blocks(now)
     typer.echo("Stops in force: " + ("; ".join(d for _, d in blocks) if blocks else "none"))
+
+
+NEWS_HISTORY = "config/news/usd_high_impact_history.csv"
+NEWS_CACHE = "data/news"
+
+
+@news_app.command("fetch")
+def news_fetch() -> None:
+    """Download this week's high-impact USD events and cache them in data/news/."""
+    from pathlib import Path
+    from urllib.error import URLError
+
+    from tradeagent.config import project_path
+    from tradeagent.data.news import fetch_live_feed, parse_live_feed, save_live_feed
+    from tradeagent.timeutil import utc_now
+
+    now = utc_now()
+    try:
+        raw = fetch_live_feed()
+        path = save_live_feed(project_path(Path(NEWS_CACHE)), now, raw)
+    except (URLError, TimeoutError, ValueError, KeyError) as exc:
+        typer.secho(
+            f"Could not fetch the news feed: {exc}. Without it, live entries are "
+            "blocked this week (news_unknown).",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"{len(parse_live_feed(raw))} high-impact USD events this week; saved {path}")
+
+
+@news_app.command("show")
+def news_show(days: Annotated[int, typer.Option("--days")] = 7) -> None:
+    """Upcoming high-impact USD events and the blackout status right now."""
+    from pathlib import Path
+
+    from tradeagent.config import load_config, project_path
+    from tradeagent.data.news import build_calendar, cached_live_feed
+    from tradeagent.timeutil import PKT, utc_now
+
+    cfg = load_config()
+    now = utc_now()
+    raw = cached_live_feed(project_path(Path(NEWS_CACHE)), now)
+    calendar = build_calendar(
+        project_path(Path(NEWS_HISTORY)), raw, now, cfg.risk.news_blackout_minutes
+    )
+    status, detail = calendar.status(now)
+    typer.secho(f"Now: {status} ({detail})", bold=True)
+    if raw is None:
+        typer.echo("This week's live feed is not cached: run `uv run tradeagent news fetch`.")
+    for event in calendar.upcoming(now, days):
+        typer.echo(
+            f"  {event.time_utc:%a %Y-%m-%d %H:%M} UTC "
+            f"({event.time_utc.tz_convert(PKT):%H:%M} PKT)  {event.title}"
+        )
 
 
 def _fmt_day(ts: object) -> str:
