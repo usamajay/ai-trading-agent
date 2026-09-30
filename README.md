@@ -17,8 +17,8 @@ An autonomous, probabilistic, risk-controlled trading **research and paper-tradi
 |---|---|---|
 | 0 | Setup | ✅ done |
 | 1 | Market data + database | ✅ done |
-| 2 | Backtesting framework | ⏳ next |
-| 3 | Strategy engine | ⬜ |
+| 2 | Backtesting framework | ✅ done |
+| 3 | Strategy engine | ⏳ in progress |
 | 4 | Risk engine | ⬜ |
 | 5 | Probability / EV engine | ⬜ |
 | 6 | Hypothesis generation | ⬜ |
@@ -62,13 +62,29 @@ All commands are for **Windows PowerShell**, run from the project folder.
 | `uv run tradeagent data ping` | Shows the account type, balance and latest prices |
 | `uv run tradeagent --help` | Lists all commands |
 
+### Backtesting commands (Phase 2)
+| Command | What it does |
+|---|---|
+| `uv run tradeagent backtest splits` | Shows the frozen train / validation / out-of-sample dates and what is excluded |
+| `uv run tradeagent backtest costs` | Shows the cost snapshot (contract size, $ per point, swaps); `--snapshot` refreshes it from MT5 |
+| `uv run tradeagent backtest spread-check` | Measures real tick spreads vs stored candle spreads (needs MT5 open) |
+| `uv run tradeagent backtest run --strategy random_baseline --symbol XAUUSD --split train --seed 1` | Backtests a strategy, saves it and writes a report to `data/backtests/<run id>/report.md` |
+| `uv run tradeagent backtest list` | Past runs, with the run counter and cost-stress PASS/FAIL |
+| `uv run tradeagent backtest lookahead-check --strategy random_baseline` | Checks a strategy never uses future data |
+| `uv run tradeagent backtest baseline --symbol XAUUSD --seeds 100` | Random baseline over many seeds (about 10 min), saved to `data/baselines/` |
+| `uv run tradeagent data resample-check` | Compares our New York-close D1/H4 candles with the broker's |
+
+Out-of-sample data is locked: backtests run on `train` or `validation` only.
+
 ### Where the data lives
 All data is on your PC in `data/` (git-ignored, never uploaded):
 
 | Path | Contents |
 |---|---|
 | `data/bars/<SYMBOL>/<TIMEFRAME>/<YEAR>.parquet` | Price candles, UTC times. e.g. `data/bars/XAUUSD/M5/2025.parquet` |
-| `data/tradeagent.db` | SQLite database: data-quality log now; trades, experiments, etc. in later phases |
+| `data/tradeagent.db` | SQLite database: data-quality log, backtest runs; trades, experiments, etc. in later phases |
+| `data/backtests/<run id>/` | One folder per backtest: report.md, equity.png, trades, daily equity, metrics.json |
+| `data/baselines/` | Random-baseline results per symbol/timeframe/split (100 seeds) |
 | `data/logs/watch_YYYY-MM-DD.log` | Live updater logs (UTC), kept 30 days |
 
 Symbols use internal names (`XAUUSD`, `USOIL`); the broker names (`XAUUSDm`, `USOILm`) are mapped in `config/settings.yaml`. History depth is set there too (`history_years: 3`, `m1_history_months: 6`).

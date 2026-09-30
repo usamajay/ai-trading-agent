@@ -227,3 +227,21 @@ def test_clean_makes_json_safe() -> None:
         "d": "2026-01-05",
         "l": ["inf", 1],
     }
+
+
+def test_baseline_distribution_one_row_per_seed(
+    cfg: AppConfig, store: BarStore, tmp_path: Path
+) -> None:
+    from tradeagent.backtest.baseline import baseline_distribution, save_distribution
+
+    df, data_hash = baseline_distribution(
+        cfg, store, "XAUUSD", range(1, 4), params={"p_entry": 0.1}
+    )
+    assert df["seed"].tolist() == [1, 2, 3]
+    assert (df["trades"] > 0).all()
+    assert df["expectancy_r"].nunique() == 3  # different seeds, different trades
+    assert len(data_hash) == 64
+    again, _ = baseline_distribution(cfg, store, "XAUUSD", range(1, 2), params={"p_entry": 0.1})
+    assert again.iloc[0].equals(df.iloc[0])  # same seed, same row
+    path = save_distribution(df, tmp_path, "XAUUSD", "M15", "train")
+    assert pd.read_parquet(path).shape == df.shape

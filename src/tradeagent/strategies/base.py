@@ -13,7 +13,7 @@
   <= t only; the truncation test (docs/PHASE_2_TASKS.md 2.6) checks this.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, runtime_checkable
 
@@ -189,6 +189,9 @@ class BarView:
         return float(values[-1 - back])
 
 
+EntrySide = Callable[[Direction, float, float], float]
+
+
 class Frames:
     """All bars of one run, prepared once. Hands out MarketContexts, one per decision.
 
@@ -196,10 +199,20 @@ class Frames:
     end is `end_utc` when present (New York-close D1/H4), else open time + length.
     """
 
-    def __init__(self, symbol: str, frames: Mapping[str, pd.DataFrame]) -> None:
+    def __init__(
+        self,
+        symbol: str,
+        frames: Mapping[str, pd.DataFrame],
+        entry_side: EntrySide | None = None,
+    ) -> None:
+        """`frames`: the decision timeframe first. `entry_side(direction, bid, spread)`
+        gives the price a new trade pays (the backtest passes its cost model's);
+        without it, expected_entry() is the bid close."""
         if not frames:
             raise ValueError("need at least one timeframe of bars")
         self.symbol = symbol
+        self.decision_timeframe = next(iter(frames))
+        self.entry_side = entry_side
         self._columns: dict[str, dict[str, np.ndarray]] = {}
         self._end_ns: dict[str, np.ndarray] = {}
         for tf, df in frames.items():
@@ -252,6 +265,17 @@ class MarketContext:
     @property
     def symbol(self) -> str:
         return self._frames.symbol
+
+    def expected_entry(self, direction: Direction) -> float:
+        """Price a market order placed now would pay, from the latest closed decision
+        bar: ask (bid + spread with the safety margin) for longs, bid for shorts.
+        Strategies should measure stops and targets from this, because the reward:risk
+        check does (the order itself fills at the next bar's open)."""
+        view = self.bars(self._frames.decision_timeframe)
+        close, spread = view.last("close"), view.last("spread")
+        if self._frames.entry_side is None:
+            return close
+        return self._frames.entry_side(direction, close, spread)
 
     def bars(self, timeframe: str) -> BarView:
         if timeframe not in self._cache:

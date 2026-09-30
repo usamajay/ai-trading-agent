@@ -7,6 +7,14 @@ Usama is a beginner at building this kind of system. He knows basic programming 
 - Never assume he knows a term — explain it in brackets the first time.
 - Keep each change small; end every session with: what was done, how to run/check it, what's next.
 
+## Working mode (set by Usama, 2026-09-30; overrides "explain every step" above)
+1. Work through tasks back-to-back without stopping for approval. After each task: run all tests (check the real exit code), commit, push, then continue with the next task.
+2. Only STOP and ask Usama when:
+   - a safety rule below is involved (real accounts, `risk.yaml`/`live.yaml` limits, out-of-sample data, promotions);
+   - a result looks wrong (e.g. the random baseline makes clear money);
+   - a decision has no obvious default. Otherwise pick the conservative option and log it in `docs/DECISIONS.md`.
+3. Keep explanations short. At the end of each phase give ONE summary: what was built, key numbers, decisions made on his behalf, and anything needing his approval.
+
 ## Source of truth
 - `docs/SPEC.md` is the master design. Read it at the start of every session.
 - The current phase task list is `docs/PHASE_<n>_TASKS.md`. Work only on the current phase unless told otherwise.

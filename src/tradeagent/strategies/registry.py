@@ -14,7 +14,7 @@ Factory = Callable[[int, dict[str, float]], Strategy]
 _FACTORIES: dict[str, Factory] = {}
 
 # Modules that register built-in strategies when imported (added phase by phase).
-BUILTIN_MODULES: tuple[str, ...] = ()
+BUILTIN_MODULES: tuple[str, ...] = ("tradeagent.strategies.baseline_random",)
 
 
 def load_builtins() -> None:

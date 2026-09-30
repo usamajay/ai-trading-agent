@@ -11,8 +11,9 @@ Flags added to every bar:
                   (scalp/intraday) after the Friday cut-off
   after_reopen    within the first minutes after a reopen (wide spreads): an entry
                   waits until the window has passed
-  flatten         scalp/intraday only: at or after the Friday cut-off, close open
-                  trades and cancel pending orders
+  flatten         scalp/intraday only: at or after the Friday cut-off, or within the
+                  same lead time before any closure of a day or more (holiday early
+                  close, closed Friday), close open trades and cancel pending orders
   gap_before      time is missing before this bar (weekend, daily break, holiday or
                   hole): a stop the open jumps past fills at the open
   gap_minutes     how long that gap is
@@ -39,6 +40,8 @@ from tradeagent.strategies.base import Style
 # A gap at least this long is a "reopen" (weekly open, daily break, holiday, hole):
 # spreads are wide for the first minutes after it.
 REOPEN_GAP_MINUTES = 30
+# A closure at least this long (weekend, holiday) ends the week for flat styles.
+LONG_CLOSURE = pd.Timedelta(hours=24)
 
 WINDOW_COLUMNS = ["start_utc", "end_utc", "source", "reason"]
 FLAG_COLUMNS = [
@@ -138,6 +141,7 @@ def flag_bars(
     after_reopen = since_reopen < pd.Timedelta(minutes=settings.no_entry_minutes_after_open)
     if flat_before_weekend:
         flatten = after_weekly_cutoff(start, settings.friday_cutoff_minutes)
+        flatten |= _before_long_closure(df, start, end, windows, settings)
     else:
         flatten = pd.Series(False, index=df.index)
     blocked |= flatten
@@ -152,6 +156,29 @@ def flag_bars(
         gap_before=gap > 0,
         gap_minutes=gap,
     )
+
+
+def _before_long_closure(
+    df: pd.DataFrame,
+    start: pd.Series,
+    end: pd.Series,
+    windows: pd.DataFrame,
+    settings: BacktestSettings,
+) -> pd.Series:
+    """Bars starting within the last minutes before a market closure of a day or more.
+
+    Holiday early closes (e.g. Black Friday ~13:00) and a closed Good Friday end the
+    week before the Friday cut-off; the exchange calendar is known in advance, so
+    scalp/intraday trades close the same time before those closures (17:00 minus the
+    16:30 cut-off = 30 minutes). Data holes (excluded windows) are not closures.
+    """
+    lead = pd.Timedelta(minutes=17 * 60 - settings.friday_cutoff_minutes)
+    next_start = start.shift(-1)
+    long_gap = (next_start - end) >= LONG_CLOSURE
+    for w_start, w_end in zip(windows["start_utc"], windows["end_utc"], strict=True):
+        long_gap &= ~((w_start < next_start) & (w_end > end))  # a hole, not a closure
+    closes_at = end.where(long_gap).bfill()  # the next long closure, from each bar
+    return ((start >= closes_at - lead) & (start < closes_at)).fillna(False)
 
 
 def load_bars(store: BarStore, symbol: str, timeframe: str) -> pd.DataFrame:

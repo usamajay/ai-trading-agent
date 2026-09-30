@@ -32,7 +32,7 @@ import numpy as np
 import pandas as pd
 
 from tradeagent.backtest.costs import CostModel
-from tradeagent.backtest.dataset import Dataset
+from tradeagent.backtest.dataset import FLAG_COLUMNS, Dataset
 from tradeagent.backtest.risk_basics import check_signal, min_balance, position_size
 from tradeagent.config import BacktestSettings, RiskLimits
 from tradeagent.data.market_hours import NEW_YORK, trading_day
@@ -581,7 +581,10 @@ def run_backtest(
         raise ValueError(f"missing context bars for {missing}")
 
     bars = dataset.bars.reset_index(drop=True)
-    frames = {dataset.timeframe: bars, **(context or {})}
+    # Strategies get prices only: the engine's flags (some use the exchange calendar)
+    # are never part of what a strategy sees.
+    visible = bars.drop(columns=[c for c in FLAG_COLUMNS if c in bars.columns])
+    frames = {dataset.timeframe: visible, **(context or {})}
     prepared = strategy.prepare(dict(frames))
     decision = _Bars(bars, dataset.timeframe)
 
@@ -610,7 +613,7 @@ def run_backtest(
         m1=_Bars(m1_bars.sort_values("time_utc").reset_index(drop=True), "M1")
         if m1_bars is not None
         else None,
-        frames=Frames(dataset.symbol, prepared),
+        frames=Frames(dataset.symbol, prepared, (decision_costs or costs).entry_side),
         windows=list(
             zip(dataset.exclusions["start_utc"], dataset.exclusions["end_utc"], strict=True)
         ),

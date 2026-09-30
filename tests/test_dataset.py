@@ -267,3 +267,53 @@ def test_entry_flags_say_why(bars: pd.DataFrame) -> None:
     assert friday["flatten"] and friday["entry_blocked"] and not friday["after_reopen"]
     assert (f["no_new_entries"] == (f["entry_blocked"] | f["after_reopen"])).all()
     assert not flags(bars)["flatten"].any()  # swing: never flattened for the weekend
+
+
+def test_intraday_flattens_before_holiday_closures() -> None:
+    def span(start: str, end: str) -> pd.DataFrame:
+        times = pd.date_range(ny(start), ny(end), freq="5min", inclusive="left")
+        return pd.DataFrame(
+            {
+                "time_utc": times.astype("datetime64[ns, UTC]"),
+                "open": 1.0,
+                "high": 1.0,
+                "low": 1.0,
+                "close": 1.0,
+                "tick_volume": 1,
+                "spread": 20,
+            }
+        )
+
+    # Black Friday: early close 13:00; Good Friday: closed, so the week ends Thursday 17:00.
+    black_friday = pd.concat(
+        [
+            span("2026-11-27 09:00", "2026-11-27 13:00"),
+            span("2026-11-29 18:00", "2026-11-29 19:00"),
+        ],
+        ignore_index=True,
+    )
+    good_friday = pd.concat(
+        [
+            span("2026-04-02 14:00", "2026-04-02 17:00"),
+            span("2026-04-05 18:00", "2026-04-05 19:00"),
+        ],
+        ignore_index=True,
+    )
+    for bars, first_flat in ((black_friday, "2026-11-27 12:30"), (good_friday, "2026-04-02 16:30")):
+        f = flags(bars, flat_before_weekend=True)
+        flat = f[f["flatten"]].index
+        assert flat.min() == pd.Timestamp(first_flat), first_flat
+        assert not flags(bars)["flatten"].any()  # swing styles hold
+
+    # A data hole of a day or more is not a closure: no early flattening before it.
+    hole = pd.concat(
+        [
+            span("2026-01-07 09:00", "2026-01-07 12:00"),
+            span("2026-01-08 14:00", "2026-01-08 15:00"),
+        ],
+        ignore_index=True,
+    )
+    w = window("2026-01-07 12:00", "2026-01-08 14:00")
+    rules = DataExclusions(excluded_windows=[w], no_trade_windows=[], keep_gaps=[])
+    f = flags(hole, rules, flat_before_weekend=True)
+    assert not f.loc[:"2026-01-07 11:55", "flatten"].any()

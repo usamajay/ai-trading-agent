@@ -660,6 +660,10 @@ def backtest_spread_check(
     )
 
 
+def _money(value: float) -> str:
+    return f"-${-value:,.2f}" if value < 0 else f"${value:,.2f}"
+
+
 def _parse_params(items: list[str] | None) -> dict[str, float]:
     params: dict[str, float] = {}
     for item in items or []:
@@ -735,7 +739,7 @@ def backtest_run(
     )
     typer.echo(
         f"  expectancy {fmt(t['expectancy_r'])} R (95% CI {ci_text}), "
-        f"net ${e['net_profit_usd']:,.2f}"
+        f"net {_money(e['net_profit_usd'])}"
     )
     typer.echo(
         f"  max drawdown {e['max_dd_pct']:.2f}% (mark-to-market), "
@@ -856,6 +860,45 @@ def backtest_lookahead_check(
     for p in problems[:10]:
         typer.echo(f"  cut {p.cut_utc}: {p.what} at {p.where}: {p.detail}")
     raise typer.Exit(code=1)
+
+
+@backtest_app.command("baseline")
+def backtest_baseline(
+    symbol: Annotated[str, typer.Option("--symbol", "-s")] = "XAUUSD",
+    seeds: Annotated[int, typer.Option("--seeds", help="Seeds 1..N.")] = 100,
+    timeframe: Annotated[str, typer.Option("--timeframe", "-t")] = "M15",
+    split: Annotated[str, typer.Option("--split")] = "train",
+    style: Annotated[str, typer.Option("--style", help="intraday or swing")] = "intraday",
+) -> None:
+    """Random baseline over many seeds; saves the distribution to data/baselines/."""
+    from pathlib import Path
+
+    from tradeagent.backtest.baseline import baseline_distribution, save_distribution
+    from tradeagent.config import SplitName, load_config, project_path
+    from tradeagent.data.store import BarStore
+    from tradeagent.strategies.base import Style
+
+    if split not in ("train", "validation") or style not in ("intraday", "swing"):
+        typer.secho("split: train/validation; style: intraday/swing", fg="red", err=True)
+        raise typer.Exit(code=1)
+    split_name: SplitName = "train" if split == "train" else "validation"
+    style_name: Style = "intraday" if style == "intraday" else "swing"
+    cfg = load_config()
+    store = BarStore(project_path(cfg.settings.storage.bars_dir))
+    df, data_hash = baseline_distribution(
+        cfg, store, symbol, range(1, seeds + 1), split_name, timeframe, style=style_name
+    )
+    path = save_distribution(
+        df, project_path(Path("data/baselines")), symbol, timeframe, split, style
+    )
+    e = df["expectancy_r"]
+    typer.echo(
+        f"{symbol} {timeframe} {style} {split}, {seeds} seeds: trades/run median "
+        f"{df['trades'].median():.0f}; expectancy mean {e.mean():.3f} R "
+        f"(sd {e.std():.3f}, 5-95% {e.quantile(0.05):.3f} to {e.quantile(0.95):.3f}); "
+        f"cost/trade {df['avg_cost_r'].mean():.3f} R; data {data_hash[:12]}"
+    )
+    typer.echo(f"saved {path}")
 
 
 def _fmt_day(ts: object) -> str:
