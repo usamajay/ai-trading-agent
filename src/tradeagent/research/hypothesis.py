@@ -24,6 +24,7 @@ import sqlite3
 import sys
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -389,6 +390,7 @@ def _record_call(
     request_id: str | None,
     outcome: str,
     response_text: str | None,
+    model: str | None = None,
 ) -> str:
     n = conn.execute("SELECT COUNT(*) FROM llm_calls").fetchone()[0] + 1
     call_id = f"C{n:04d}"
@@ -401,7 +403,7 @@ def _record_call(
             (
                 call_id,
                 PURPOSE,
-                cfg.settings.llm.model,
+                model or cfg.settings.llm.model,
                 prompt.sha256,
                 input_tokens,
                 output_tokens,
@@ -528,6 +530,20 @@ def propose(conn: sqlite3.Connection, cfg: AppConfig, client: Client) -> RoundRe
         _set_outcome(conn, call_id, "invalid_answer")
         raise LlmError(f"{call_id}: {e}; nothing stored") from e
 
+    stored, duplicates = _store(conn, cfg, proposals, call_id, llm.model)
+    _set_outcome(conn, call_id, "ok")
+    return RoundResult(call_id, cost, proposals, stored, duplicates)
+
+
+def _store(
+    conn: sqlite3.Connection,
+    cfg: AppConfig,
+    proposals: list[Proposal],
+    call_id: str,
+    model: str,
+    origin: str = "api",
+) -> tuple[list[str], list[str]]:
+    """Validated proposals -> `llm` hypotheses (status proposed); (new ids, known ids)."""
     stored, duplicates = [], []
     for p in proposals:
         hid = hypothesis_id(p.statement)
@@ -539,7 +555,8 @@ def propose(conn: sqlite3.Connection, cfg: AppConfig, client: Client) -> RoundRe
                 "expected_effect": p.expected_effect,
                 "how_to_falsify": p.how_to_falsify,
                 "llm_call": call_id,
-                "model": llm.model,
+                "model": model,
+                "origin": origin,
             },
             ensure_ascii=False,
         )
@@ -547,5 +564,42 @@ def propose(conn: sqlite3.Connection, cfg: AppConfig, client: Client) -> RoundRe
             stored.append(hid)
         else:
             duplicates.append(hid)
-    _set_outcome(conn, call_id, "ok")
-    return RoundResult(call_id, cost, proposals, stored, duplicates)
+    return stored, duplicates
+
+
+MANUAL_ORIGIN = "manual-claude-code"
+
+
+def import_answer(conn: sqlite3.Connection, cfg: AppConfig, path: Path) -> RoundResult:
+    """Ideas written outside the API (e.g. by Claude Code answering the dry-run prompt):
+    same schema and validation as a live answer, stored the same way, cost $0. The
+    prompt hash recorded is that of the current dry-run prompt."""
+    llm = cfg.settings.llm
+    text = path.read_text(encoding="utf-8")
+    prompt = build_prompt(build_summary(conn, cfg), llm)
+    budget = Budget(0, 0.0, 0.0, None)
+
+    def record(outcome: str) -> str:
+        return _record_call(
+            conn,
+            cfg,
+            prompt,
+            budget,
+            input_tokens=None,
+            output_tokens=None,
+            cost=0.0,
+            stop_reason=None,
+            request_id=path.name,
+            outcome=outcome,
+            response_text=text,
+            model=MANUAL_ORIGIN,
+        )
+
+    try:
+        proposals = parse_answer(text, llm.max_hypotheses)
+    except LlmError as e:
+        call_id = record("invalid_answer")
+        raise LlmError(f"{call_id}: {e}; nothing stored") from e
+    call_id = record("ok")
+    stored, duplicates = _store(conn, cfg, proposals, call_id, MANUAL_ORIGIN, MANUAL_ORIGIN)
+    return RoundResult(call_id, 0.0, proposals, stored, duplicates)

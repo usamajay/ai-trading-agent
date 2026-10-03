@@ -81,6 +81,7 @@ All commands are for **Windows PowerShell**, run from the project folder.
 | `uv run tradeagent research scan --dry-run` | Looks for groups of trades (hour, session, weekday, direction, regime) that differ beyond chance |
 | `uv run tradeagent research propose` | **Dry run** (sends nothing): prints the prompt for Claude and its worst-case cost |
 | `uv run tradeagent research propose --live` | Sends **one** call to the Claude API (needs `ANTHROPIC_API_KEY` in `.env` and API credit); up to 5 new ideas are stored as `proposed`, nothing is run. Refused before sending if it could cost more than the caps in `config/settings.yaml` (`llm:`; $0.50 per call, $5 per month) |
+| `uv run tradeagent research import data/llm/manual_DATE.json` | Stores ideas from a JSON file with the same format and checks as `--live` (cost $0, status proposed, nothing run) |
 | `uv run tradeagent research show L1a2b3c` | One hypothesis in full (for Claude's ideas: rationale, parameters, how to falsify) |
 
 ### Probability commands (Phase 5)

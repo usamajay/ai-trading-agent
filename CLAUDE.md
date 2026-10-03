@@ -71,6 +71,7 @@ uv run tradeagent research scan [--dry-run]  # entry-time groups, Bonferroni; fl
 uv run tradeagent research load-leads    # docs/RESEARCH_HYPOTHESES.md -> hypotheses
 uv run tradeagent research propose      # Claude API hypotheses: DRY RUN (prompt + worst-case cost)
 uv run tradeagent research propose --live  # one real call; caps in settings.yaml llm: ($0.50/run, $5/month)
+uv run tradeagent research import FILE.json  # ideas written outside the API; same checks, $0
 uv run tradeagent research show ID       # one hypothesis in full
 uv run tradeagent prob calibrate --latest  # p_win/EV calibration of latest train runs (--run RUN_ID for one)
 ```

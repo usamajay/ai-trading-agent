@@ -4,6 +4,7 @@
 import json
 import sqlite3
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -25,6 +26,7 @@ from tradeagent.research.hypothesis import (
     cost_usd,
     dry_run,
     hypothesis_id,
+    import_answer,
     month_spend,
     parse_answer,
     propose,
@@ -299,3 +301,39 @@ def test_count_error_is_clean_and_free(conn: sqlite3.Connection, cfg: AppConfig)
     with pytest.raises(LlmError, match="token count failed"):
         propose(conn, cfg, FakeClient(fake))
     assert fake.created == [] and _calls(conn) == []
+
+
+# --- import (ideas written outside the API) ------------------------------------------------
+
+
+def test_import_stores_like_live_at_zero_cost(
+    conn: sqlite3.Connection, cfg: AppConfig, tmp_path: Path
+) -> None:
+    path = tmp_path / "manual.json"
+    path.write_text(_answer(IDEA), encoding="utf-8")
+    result = import_answer(conn, cfg, path)
+    hid = hypothesis_id(IDEA["statement"])
+    assert result.stored == [hid] and result.cost_usd == 0.0
+    source, status, rationale = conn.execute(
+        "SELECT source, status, rationale FROM hypotheses WHERE hypothesis_id = ?", (hid,)
+    ).fetchone()
+    assert (source, status) == ("llm", "proposed")
+    assert json.loads(rationale)["origin"] == "manual-claude-code"
+    row = conn.execute("SELECT model, cost_usd, outcome, request_id FROM llm_calls").fetchone()
+    assert row == ("manual-claude-code", 0.0, "ok", "manual.json")
+    assert conn.execute("SELECT COUNT(*) FROM experiments").fetchone()[0] == 0  # not registered
+    assert import_answer(conn, cfg, path).duplicates == [hid]
+
+
+def test_import_rejects_invalid_files(
+    conn: sqlite3.Connection, cfg: AppConfig, tmp_path: Path
+) -> None:
+    path = tmp_path / "bad.json"
+    path.write_text(_answer(IDEA, IDEA, IDEA, IDEA, IDEA, IDEA), encoding="utf-8")  # 6 > 5
+    with pytest.raises(LlmError, match="nothing stored"):
+        import_answer(conn, cfg, path)
+    path.write_text(_answer({**IDEA, "params": {"hours_utc": "1-4"}}), encoding="utf-8")
+    with pytest.raises(LlmError, match="schema"):
+        import_answer(conn, cfg, path)
+    assert conn.execute("SELECT COUNT(*) FROM hypotheses").fetchone()[0] == 0
+    assert [r[0] for r in conn.execute("SELECT outcome FROM llm_calls")] == ["invalid_answer"] * 2

@@ -376,3 +376,27 @@ def show_cmd(
             typer.echo(f"- rationale: {rationale}")
     finally:
         conn.close()
+
+
+@research_app.command("import")
+def import_cmd(
+    file: Annotated[Path, typer.Argument(help='JSON answer: {"hypotheses": [...]}')],
+) -> None:
+    """Store hypotheses from a JSON file written outside the API (same schema and checks
+    as `propose --live`); status proposed, cost $0, nothing registered or run."""
+    from tradeagent.research.hypothesis import LlmError, import_answer
+
+    cfg, conn = _db()
+    try:
+        try:
+            result = import_answer(conn, cfg, file)
+        except (LlmError, OSError) as e:
+            typer.echo(f"Not imported: {e}", err=True)
+            raise typer.Exit(code=1) from e
+        typer.echo(f"{result.call_id}: imported {file.name} (cost $0)")
+        for hid in result.stored:
+            typer.echo(f"  {hid} added (proposed)")
+        for hid in result.duplicates:
+            typer.echo(f"  {hid} already known (not added again)")
+    finally:
+        conn.close()
