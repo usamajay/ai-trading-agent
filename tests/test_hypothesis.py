@@ -48,9 +48,12 @@ class FakeMessages:
     def __init__(self, text: str, stop_reason: str = "end_turn", tokens: int = 10_000) -> None:
         self.text, self.stop_reason, self.tokens = text, stop_reason, tokens
         self.error: Exception | None = None
+        self.count_error: Exception | None = None
         self.created: list[dict[str, Any]] = []
 
     def count_tokens(self, **kwargs: Any) -> Any:
+        if self.count_error is not None:
+            raise self.count_error
         return SimpleNamespace(input_tokens=self.tokens)
 
     def create(self, **kwargs: Any) -> Any:
@@ -285,3 +288,14 @@ def test_connection_error_is_charged_at_worst_case(
 def test_real_client_never_retries(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
     assert anthropic_client().max_retries == 0  # type: ignore[attr-defined]
+
+
+def test_count_error_is_clean_and_free(conn: sqlite3.Connection, cfg: AppConfig) -> None:
+    request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages/count_tokens")
+    fake = FakeMessages(_answer(IDEA))
+    fake.count_error = anthropic.BadRequestError(
+        "credit balance is too low", response=httpx2.Response(400, request=request), body=None
+    )
+    with pytest.raises(LlmError, match="token count failed"):
+        propose(conn, cfg, FakeClient(fake))
+    assert fake.created == [] and _calls(conn) == []

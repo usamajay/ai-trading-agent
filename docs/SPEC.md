@@ -134,8 +134,11 @@ src/tradeagent/
     metrics.py           # see §7
     robustness.py        # sensitivity, Monte Carlo, bootstrap
   research/
-    hypothesis.py        # generates hypotheses (Claude API + stats scans)
-    experiments.py       # experiment manager, dataset split guard
+    hypothesis.py        # Claude API hypothesis loop (dry run default, spend caps)
+    scans.py             # statistical scans -> `scan` hypotheses
+    experiments.py       # experiment manager (pre-registered criteria, verdicts, lessons)
+    guard.py             # dataset split guard
+    leads.py             # logged human leads -> `human` hypotheses
   registry/
     registry.py          # strategy/model versions + status
   journal/
@@ -172,6 +175,7 @@ src/tradeagent/
 | `lessons` | lesson_id, trade_id or experiment_id, text, evidence_json |
 | `approvals` | approval_id, strategy_id, from_status, to_status, approved_by, evidence_json, time |
 | `risk_events` | time, rule, value, limit, action (block/shutdown/kill) |
+| `llm_calls` | call_id, purpose, model, prompt_sha256, input/output tokens, cost_usd, worst_case_usd, stop_reason, request_id, outcome, response_text |
 
 Every row that comes from code stores **`git_commit`** and **`config_hash`** so any result can be reproduced.
 
@@ -339,6 +343,7 @@ Definitions (code: `src/tradeagent/backtest/metrics.py`):
 `Observe → Hypothesis → Backtest → Validate → Forward test → Evaluate → Learn → Improve → Repeat`
 
 - **Hypothesis generator:** twice a week, sends a structured summary (recent trades, rejected trades, per-regime stats, failing strategies) to the Claude API and asks for ≤ 5 testable hypotheses in a fixed JSON schema: `{statement, rationale, strategy_change, params, expected_effect, how_to_falsify}`. Statistical scans (e.g. "win rate by hour") also produce hypotheses.
+  - *As built in Phase 6 (`research/hypothesis.py`, `tradeagent research propose`):* the summary holds hypotheses, **train/validation** experiments (criterion, verdict, key metrics), experiment lessons and the strategies with their variant options; **never** out-of-sample results, trade lessons or account data (trades and rejections join the summary from Phase 8). **Dry run is the default** (prints the prompt and worst-case cost, sends nothing). A live call is refused before sending unless prompt tokens ≤ `max_input_tokens` and the worst case (prompt + full `max_output_tokens`) fits `max_usd_per_run` and what is left of `max_usd_per_month` (`settings.yaml` → `llm:`); one call per run, no SDK retries; every call's real cost is recorded in `llm_calls` before its answer is used. The answer must match a strict JSON schema; ideas are stored as `llm` hypotheses with status `proposed`, and a human chooses which to register. `params` is a list of `{name, value}` pairs (strict schemas need fixed keys).
 - Each hypothesis becomes an **experiment** with a pre-registered success criterion written *before* the test runs.
 - The LLM **may** write new strategy code in a sandbox branch; that code must pass tests + the full validation pipeline, and **a human merges it**.
 - **Lessons** are written after every closed trade and every experiment (what was expected, what happened, what we learned) and are fed back into the next hypothesis round.

@@ -458,7 +458,10 @@ def propose(conn: sqlite3.Connection, cfg: AppConfig, client: Client) -> RoundRe
         "messages": [{"role": "user", "content": prompt.user}],
     }
     # Exact input count from the API (free), plus a margin for the schema it adds.
-    counted = client.messages.count_tokens(**request).input_tokens + SCHEMA_TOKEN_MARGIN
+    try:
+        counted = client.messages.count_tokens(**request).input_tokens + SCHEMA_TOKEN_MARGIN
+    except anthropic.APIError as e:  # token counting is free: nothing to record
+        raise LlmError(f"not sent: token count failed: {e}") from e
     budget = check_budget(llm, counted, month_spend(conn, utc_now()))
     if not budget.allowed:
         raise SpendCapError(f"not sent: {budget.refusal}")

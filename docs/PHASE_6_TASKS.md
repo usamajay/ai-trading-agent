@@ -53,3 +53,8 @@ Sources: SPEC §2.2, §5, §7.4, §8, `docs/RESEARCH_HYPOTHESES.md`, CLAUDE.md s
 ## Needs Usama's input
 - **6.7:** an Anthropic API key in `.env`, and a monthly spend limit (proposal: a few dollars; one call twice a week). Everything before 6.7 needs no key.
 - **6.4:** the regime labeller is pulled forward from Phase 8 in research-only form, because H4 cannot be tested without it.
+
+## Status (2026-10-03): Phase 6 built
+- 6.1–6.6 done (results in `docs/reports/PHASE_6_LEADS.md`): 22 experiments registered, 18 run, **0 passed train**; H1 and H4 falsified, H2 supported only as a swap-cost fact, H3 supported, **H5 falsified** (Usama, 2026-10-03). The scans tested 213 groups and flagged none.
+- 6.7 done: `tradeagent research propose` (dry run by default; `--live` sends one capped call). It is tested with a fake client. The first live attempt (2026-10-03) was refused by the API because the Anthropic account has **no credit**. Token counting failed, so nothing was billed and nothing was stored. One live round is still needed once credit is added.
+- 6.8 done: README, CLAUDE.md commands, SPEC §2.3/§3.2/§8 and DECISIONS updated.

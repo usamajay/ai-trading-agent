@@ -69,5 +69,8 @@ uv run tradeagent research withdraw E0009 --reason "..."  # before running; not 
 uv run tradeagent research conclude H1 --status falsified --lesson "..."
 uv run tradeagent research scan [--dry-run]  # entry-time groups, Bonferroni; flags -> scan hypotheses
 uv run tradeagent research load-leads    # docs/RESEARCH_HYPOTHESES.md -> hypotheses
+uv run tradeagent research propose      # Claude API hypotheses: DRY RUN (prompt + worst-case cost)
+uv run tradeagent research propose --live  # one real call; caps in settings.yaml llm: ($0.50/run, $5/month)
+uv run tradeagent research show ID       # one hypothesis in full
 uv run tradeagent prob calibrate --latest  # p_win/EV calibration of latest train runs (--run RUN_ID for one)
 ```
