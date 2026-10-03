@@ -29,13 +29,14 @@ def baseline_distribution(
     params: dict[str, float] | None = None,
     style: Style = "intraday",
     direction: str = "both",
+    allow_oos: bool = False,
 ) -> tuple[pd.DataFrame, str]:
     """(one row per seed, data fingerprint). The bars are loaded once for all seeds."""
 
     def make(seed: int) -> RandomBaseline:
         return RandomBaseline(seed, params, timeframe, style, direction)
 
-    inputs = load_inputs(cfg, store, make(0), symbol, split)
+    inputs = load_inputs(cfg, store, make(0), symbol, split, allow_oos)
     hard = stressed(inputs.costs, cfg.settings.backtest.cost_stress_multiple)
     rows = []
     for seed in seeds:

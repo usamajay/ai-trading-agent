@@ -105,5 +105,9 @@ def test_connect_db_creates_all_tables(tmp_path: Path) -> None:
         if table != "approvals":  # approvals are human actions, not code results
             assert {"git_commit", "config_hash"} <= columns, table
     with pytest.raises(sqlite3.IntegrityError):  # status must be a known ladder step
-        conn.execute("INSERT INTO strategies VALUES ('s1','n','1','{}','h','live_now','c','h','t')")
+        conn.execute(
+            "INSERT INTO strategies (strategy_id, name, version, params_json, code_hash, "
+            "status, git_commit, config_hash, created_at) "
+            "VALUES ('s1','n','1','{}','h','live_now','c','h','t')"
+        )
     conn.close()

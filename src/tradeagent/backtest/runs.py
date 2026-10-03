@@ -48,6 +48,7 @@ def execute_run(
     out_root: Path,
     enforce_account_limits: bool = False,
     variant: VariantSpec | None = None,
+    allow_oos: bool = False,
 ) -> RunRecord:
     """`variant` (research): run the strategy on other timeframes / one direction / style."""
     spec = variant or VariantSpec(strategy_name, params=params)
@@ -57,7 +58,7 @@ def execute_run(
     strategy = build(spec, seed)
     check_strategy(strategy)
     strategy_name = strategy.name
-    inputs = load_inputs(cfg, store, strategy, symbol, split)
+    inputs = load_inputs(cfg, store, strategy, symbol, split, allow_oos)
     enforce = enforce_account_limits
     result = run_inputs(cfg, strategy, inputs, enforce_account_limits=enforce)
     multiple = cfg.settings.backtest.cost_stress_multiple

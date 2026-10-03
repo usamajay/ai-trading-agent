@@ -41,3 +41,20 @@ llm:                             # Claude API hypothesis loop (Phase 6.7); key i
   max_usd_per_run: 0.50          # worst case of one call must fit, else refused before sending
   max_usd_per_month: 5.00        # Usama's ~$5/month; recorded spend this UTC month + worst case
   max_hypotheses: 5              # SPEC §8
+validation:                      # Phase 7 promotion gates (SPEC §7.4, §8.1); not risk limits
+  wf_history_days: 365           # walk-forward: 12 months of history before the first test window
+  wf_test_days: 91               # 3-month test windows
+  wf_step_days: 91               # step 3 months
+  wf_min_positive_share: 0.667   # >= 2 of 3 windows with expectancy > 0 after costs
+  min_pf_candidate: 1.2          # research -> candidate: train profit factor
+  min_pf_validation: 1.2         # candidate -> validated (with expectancy > 0, stress > 0)
+  min_trades_train_val: 200
+  min_trades_oos: 50
+  min_pf_oos: 1.2
+  sensitivity_pct: 20            # each parameter x0.8 and x1.2
+  min_pf_sensitivity: 1.1
+  mc_runs: 1000                  # trade-order shuffles
+  mc_dd_multiple: 2.0            # 95th pct shuffled drawdown <= 2x backtest drawdown
+  baseline_seeds: 100            # random baseline on the same split (p < 0.05 needs >= 19)
+  baseline_p_max: 0.05
+  dsr_min: 0.95                  # Deflated Sharpe Ratio (multiple-testing haircut)

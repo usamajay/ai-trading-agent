@@ -44,12 +44,20 @@ def bars_fingerprint(frames: dict[str, pd.DataFrame]) -> str:
 
 
 def load_inputs(
-    cfg: AppConfig, store: BarStore, strategy: Strategy, symbol: str, split: SplitName
+    cfg: AppConfig,
+    store: BarStore,
+    strategy: Strategy,
+    symbol: str,
+    split: SplitName,
+    allow_oos: bool = False,
+    period: tuple[pd.Timestamp, pd.Timestamp] | None = None,
 ) -> RunInputs:
-    """Out-of-sample is refused in Phase 2 (SplitError from load_dataset)."""
+    """Out-of-sample is refused (SplitError) unless `allow_oos` (OOS gate only)."""
     decision_tf = strategy.timeframes[0]
     warmup = max(200, 2 * strategy.lookback_bars)
-    dataset = load_dataset(cfg, store, symbol, decision_tf, split, strategy.style, warmup)
+    dataset = load_dataset(
+        cfg, store, symbol, decision_tf, split, strategy.style, warmup, allow_oos, period
+    )
     first, end = dataset.bars["time_utc"].iloc[0], dataset.end_utc
 
     def window(df: pd.DataFrame) -> pd.DataFrame:

@@ -90,6 +90,27 @@ class BacktestSettings(_Strict):
         return int(hours) * 60 + int(minutes)
 
 
+class ValidationSettings(_Strict):
+    """Phase 7 promotion gates (SPEC §7.4, §8.1). Promotion rules, not risk limits."""
+
+    wf_history_days: int = Field(ge=1)  # walk-forward: history before the first test window
+    wf_test_days: int = Field(ge=1)
+    wf_step_days: int = Field(ge=1)
+    wf_min_positive_share: float = Field(gt=0, le=1)  # windows with expectancy > 0
+    min_pf_candidate: float = Field(gt=0)  # research -> candidate (train)
+    min_pf_validation: float = Field(gt=0)  # candidate -> validated
+    min_trades_train_val: int = Field(ge=1)
+    min_trades_oos: int = Field(ge=1)
+    min_pf_oos: float = Field(gt=0)
+    sensitivity_pct: float = Field(gt=0, lt=100)  # each parameter +/- this %
+    min_pf_sensitivity: float = Field(gt=0)
+    mc_runs: int = Field(ge=100)
+    mc_dd_multiple: float = Field(ge=1)  # 95th pct shuffled drawdown <= this x backtest
+    baseline_seeds: int = Field(ge=19)  # p < 0.05 needs at least 19 seeds
+    baseline_p_max: float = Field(gt=0, lt=1)
+    dsr_min: float = Field(gt=0, lt=1)
+
+
 class LlmSettings(_Strict):
     """Claude API hypothesis loop (Phase 6.7): model and hard spend caps."""
 
@@ -116,6 +137,7 @@ class Settings(_Strict):
     data_splits: DataSplits
     backtest: BacktestSettings
     llm: LlmSettings
+    validation: ValidationSettings
 
 
 class RiskLimits(_Strict):

@@ -28,7 +28,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from tradeagent.backtest.splits import split_range
+from tradeagent.backtest.splits import SplitError, split_range
 from tradeagent.config import AppConfig, BacktestSettings, DataExclusions, SplitName
 from tradeagent.data.market_hours import after_weekly_cutoff
 from tradeagent.data.mt5_client import TIMEFRAMES
@@ -196,12 +196,22 @@ def load_dataset(
     split: SplitName,
     style: Style,
     warmup_bars: int = 500,
+    allow_oos: bool = False,
+    period: tuple[pd.Timestamp, pd.Timestamp] | None = None,
 ) -> Dataset:
     """Bars of one split plus up to `warmup_bars` earlier bars of indicator history.
 
-    Raises SplitError for out-of-sample (locked in Phase 2) or unfrozen split dates.
+    Raises SplitError for out-of-sample (unless `allow_oos`, OOS gate only) or unfrozen
+    split dates. `period` replaces the split's range (walk-forward over train +
+    validation); it must lie inside train + validation.
     """
-    period = split_range(cfg.splits, split)
+    if period is None:
+        period = split_range(cfg.splits, split, allow_oos)
+    else:
+        lo = split_range(cfg.splits, "train")[0]
+        hi = split_range(cfg.splits, "validation")[1]
+        if period[0] < lo or period[1] > hi:
+            raise SplitError("a custom period must lie inside train + validation")
     bt = cfg.settings.backtest
     bars = load_bars(store, symbol, timeframe)
     bars = bars[bars["time_utc"] < period[1]].reset_index(drop=True)

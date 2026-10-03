@@ -67,9 +67,13 @@ def period_times(period: SplitPeriod) -> tuple[pd.Timestamp, pd.Timestamp]:
     return pd.Timestamp(period.start, tz="UTC"), pd.Timestamp(period.end, tz="UTC")
 
 
-def split_range(splits: SplitDates | None, split: SplitName) -> tuple[pd.Timestamp, pd.Timestamp]:
-    """The time range a backtest may use. Refuses out-of-sample and unfrozen splits."""
-    if split == "out_of_sample" and OOS_LOCKED:
+def split_range(
+    splits: SplitDates | None, split: SplitName, allow_oos: bool = False
+) -> tuple[pd.Timestamp, pd.Timestamp]:
+    """The time range a backtest may use. Refuses unfrozen splits, and out-of-sample
+    unless `allow_oos` is passed, which only the Phase 7 OOS gate does
+    (`registry/gates.py`, once per validated candidate)."""
+    if split == "out_of_sample" and OOS_LOCKED and not allow_oos:
         raise SplitError(
             "out-of-sample data is locked in Phase 2 (touched once per candidate, Phase 7)"
         )

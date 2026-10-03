@@ -303,6 +303,19 @@ CREATE TABLE IF NOT EXISTS risk_state (
 -- (that table is for paper/demo/live). run_number = how many runs this strategy
 -- (by name, any version/params) has had on this split, counting this one: the
 -- number of variants tried, for the multiple-testing rule (SPEC §7.4).
+CREATE TABLE IF NOT EXISTS gate_checks (
+    check_id TEXT PRIMARY KEY,
+    strategy_id TEXT NOT NULL REFERENCES strategies (strategy_id),
+    from_status TEXT NOT NULL,
+    to_status TEXT NOT NULL,
+    passed INTEGER NOT NULL,
+    checks_json TEXT NOT NULL,
+    run_ids_json TEXT NOT NULL,
+    git_commit TEXT NOT NULL,
+    config_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS llm_calls (
     call_id TEXT PRIMARY KEY,
     purpose TEXT NOT NULL,
@@ -366,6 +379,7 @@ TABLES = (
     "backtest_runs",
     "risk_state",
     "llm_calls",
+    "gate_checks",
 )
 
 
@@ -381,6 +395,12 @@ def connect_db(sqlite_path: Path) -> sqlite3.Connection:
 
 # Columns added after a table was first created (SQLite: ALTER TABLE ... ADD COLUMN).
 ADDED_COLUMNS: dict[str, dict[str, str]] = {
+    "strategies": {  # Phase 7 registry: one row per candidate (variant + symbol)
+        "symbol": "TEXT",
+        "variant_json": "TEXT",
+        "seed": "INTEGER",
+        "updated_at": "TEXT",
+    },
     "experiments": {  # Phase 6 experiment manager
         "symbol": "TEXT",
         "variant_json": "TEXT",
