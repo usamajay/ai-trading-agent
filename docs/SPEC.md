@@ -140,7 +140,8 @@ src/tradeagent/
     guard.py             # dataset split guard
     leads.py             # logged human leads -> `human` hypotheses
   registry/
-    registry.py          # strategy/model versions + status
+    registry.py          # strategy/model versions + status, promotion ladder
+    gates.py             # automatic gates; the only code that opens out-of-sample
   journal/
     journal.py           # trades, rejections, decisions
   monitoring/
@@ -166,7 +167,7 @@ src/tradeagent/
 | `bars` (Parquet) | symbol, timeframe, time_utc, open, high, low, close, tick_volume, spread |
 | `data_quality_log` | run_id, symbol, timeframe, issue_type, time_utc, details |
 | `regimes` | symbol, timeframe, time_utc, trend_state, vol_state, direction, detector_version |
-| `strategies` | strategy_id, name, version, params_json, code_hash, status (`research/candidate/validated/oos_passed/paper/approved/production/retired`) |
+| `strategies` | strategy_id, name, version, params_json, code_hash, symbol, variant_json, seed, status (`research/candidate/validated/oos_passed/paper/approved/production/retired`) |
 | `experiments` | experiment_id, hypothesis_id, strategy_id, dataset_split, date_range, git_commit, seed, metrics_json, verdict, created_at |
 | `hypotheses` | hypothesis_id, text, rationale, source (`llm`/`scan`/`human`), status, created_at |
 | `signals` | signal_id, time_utc, symbol, strategy_id, direction, entry, sl, tp, p_win, ev_r, regime_id |
@@ -175,6 +176,7 @@ src/tradeagent/
 | `lessons` | lesson_id, trade_id or experiment_id, text, evidence_json |
 | `approvals` | approval_id, strategy_id, from_status, to_status, approved_by, evidence_json, time |
 | `risk_events` | time, rule, value, limit, action (block/shutdown/kill) |
+| `gate_checks` | check_id, strategy_id, from_status, to_status, passed, checks_json (each check: required, actual, ok), run_ids_json |
 | `llm_calls` | call_id, purpose, model, prompt_sha256, input/output tokens, cost_usd, worst_case_usd, stop_reason, request_id, outcome, response_text |
 
 Every row that comes from code stores **`git_commit`** and **`config_hash`** so any result can be reproduced.
@@ -309,6 +311,7 @@ Position size = `(equity × risk%) / (SL distance × value per point per lot)`, 
 ```
 - Train: build/tune. Validation: choose among variants. **OOS: touched once per candidate**; each touch is logged in `experiments`, and a second touch is blocked by `experiments.py` unless a human overrides with a written reason.
 - Walk-forward: rolling windows (e.g. 12 months train / 3 months test, step 3 months).
+  - *As built in Phase 7 (`backtest/walkforward.py`):* windows lie inside train + validation only (365 days of history, 91-day test windows, 91-day step; `settings.yaml` → `validation:`). Parameters are fixed (no re-fit per window), so one run with enforced limits covers the span, and trades are cut into windows by entry time. Trades entering in the train/validation embargo are dropped. Out-of-sample opens only in `registry/gates.py`: for a `validated` candidate, with an explicit `--touch-oos`, once. A second touch needs a human override reason, and every touch is an `experiments` row.
 
 ### 7.3 Metrics reported for every run
 Win rate, profit factor, expectancy (R and $), average trade, Sharpe, Sortino, Calmar, max drawdown (% and duration), recovery factor, number of trades, longest losing streak, exposure time, results per regime, per session, per year.
@@ -334,6 +337,7 @@ Definitions (code: `src/tradeagent/backtest/metrics.py`):
 - Monte Carlo (trade order shuffle, 1000 runs): 95th-percentile drawdown ≤ 2× backtest drawdown and within risk limits.
 - Works on at least 2 of 3 walk-forward regimes it claims to suit.
 - Multiple-testing correction: record how many variants were tried; apply Deflated Sharpe Ratio or Bonferroni-style haircut.
+- *As built in Phase 7 (`registry/gates.py`, `backtest/robustness.py`):* the baseline p is empirical, (1 + random seeds with expectancy ≥ the strategy's) / (1 + seeds), on the same OOS period, timeframe, style and direction (≥ 20 seeds needed for p < 0.05). Sensitivity moves each parameter ×0.8 and ×1.2 inside its range, on train. Monte Carlo shuffles train + validation trades (1,000 runs); its 95th-percentile closed-trade drawdown must be ≤ min(2× the real order's, `max_drawdown_pct`). "2 of 3 walk-forward regimes" is read as ≥ 2/3 of walk-forward windows (at least 3) with expectancy > 0, and windows without trades count as failures. Multiple testing uses the Deflated Sharpe Ratio ≥ 0.95, with N = every recorded run of the base strategy and the spread of their daily Sharpe ratios.
 - Every backtest used for these checks runs with **account-level limits enforced** (`--enforce-account-limits`; stored as `"__account_limits": "enforced"` in `params_json`).
 
 ---
@@ -361,6 +365,8 @@ Definitions (code: `src/tradeagent/backtest/metrics.py`):
 | oos_passed → paper | Automatic |
 | paper → approved | ≥ 4 weeks and ≥ 50 paper/demo trades; results within the OOS 90% band; **human review** |
 | approved → production | **Human approval** recorded in `approvals` with evidence link |
+
+*As built in Phase 7:* candidate → validated needs validation expectancy > 0, PF ≥ 1.2 and cost stress > 0 (one attempt). A failed gate cannot be re-run for the same strategy id (a changed idea is a new registration and adds to the counters); the OOS gate can be re-opened only with a human override reason. A strategy whose code hash changed since registration is refused. `tradeagent gate approve` is the only way past `paper`, and it needs a name and a written reason.
 
 **Account limits enforced:** every backtest a gate relies on (train, validation, walk-forward, OOS, cost stress, sensitivity) must run with `--enforce-account-limits` (daily/weekly loss, drawdown shutdown, loss-streak pause applied as in paper and live). The Phase 7 gate code refuses a run whose `params_json` does not say `"__account_limits": "enforced"`. Flag-mode runs are for research only.
 

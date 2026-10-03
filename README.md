@@ -21,8 +21,8 @@ An autonomous, probabilistic, risk-controlled trading **research and paper-tradi
 | 3 | Strategy engine | ✅ done |
 | 4 | Risk engine | ✅ done |
 | 5 | Probability / EV engine | ✅ done |
-| 6 | Hypothesis generation | ⏳ 6.1–6.6 done; 6.7 (Claude API) waits for the API key |
-| 7 | Walk-forward + OOS | ⬜ |
+| 6 | Hypothesis generation | ✅ done (the live Claude call waits for API credit; use `research import` meanwhile) |
+| 7 | Walk-forward + OOS | ✅ framework built and tested on synthetic data; no real strategy has reached it |
 | 8 | Paper trading | ⬜ |
 | 9 | Monitoring + self-improvement | ⬜ |
 | 10 | Controlled live deployment | 🔒 |
@@ -83,6 +83,19 @@ All commands are for **Windows PowerShell**, run from the project folder.
 | `uv run tradeagent research propose --live` | Sends **one** call to the Claude API (needs `ANTHROPIC_API_KEY` in `.env` and API credit); up to 5 new ideas are stored as `proposed`, nothing is run. Refused before sending if it could cost more than the caps in `config/settings.yaml` (`llm:`; $0.50 per call, $5 per month) |
 | `uv run tradeagent research import data/llm/manual_DATE.json` | Stores ideas from a JSON file with the same format and checks as `--live` (cost $0, status proposed, nothing run) |
 | `uv run tradeagent research show L1a2b3c` | One hypothesis in full (for Claude's ideas: rationale, parameters, how to falsify) |
+
+### Promotion gates (Phase 7)
+The ladder is `research → candidate → validated → oos_passed → paper → approved → production`. Code decides the first four steps from backtests with account limits enforced. The last two are **yours only**.
+
+| Command | What it does |
+|---|---|
+| `uv run tradeagent gate register --strategy NAME --symbol XAUUSD [--param k=v ...]` | Adds a candidate at `research` |
+| `uv run tradeagent gate status` | Every registered strategy and its step |
+| `uv run tradeagent gate check ID` | Runs the next gate: train (PF ≥ 1.2), then validation (one attempt) |
+| `uv run tradeagent gate check ID --touch-oos` | The out-of-sample gate: opens the locked OOS data **once** for a validated candidate and runs every SPEC §7.4 check |
+| `uv run tradeagent gate show ID` | Every check of every gate: what was needed and what was measured |
+| `uv run tradeagent gate approve ID --by Usama --reason "..."` | **Human only:** paper → approved → production |
+| `uv run tradeagent gate retire ID --by Usama --reason "..."` | **Human only:** retire a strategy |
 
 ### Probability commands (Phase 5)
 | Command | What it does |

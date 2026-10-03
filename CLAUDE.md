@@ -73,5 +73,9 @@ uv run tradeagent research propose      # Claude API hypotheses: DRY RUN (prompt
 uv run tradeagent research propose --live  # one real call; caps in settings.yaml llm: ($0.50/run, $5/month)
 uv run tradeagent research import FILE.json  # ideas written outside the API; same checks, $0
 uv run tradeagent research show ID       # one hypothesis in full
+uv run tradeagent gate register --strategy NAME --symbol XAUUSD [--param k=v]  # Phase 7 registry
+uv run tradeagent gate status | show ID  # ladder step; every gate check
+uv run tradeagent gate check ID [--touch-oos]  # next automatic gate; OOS only with the flag, once
+uv run tradeagent gate approve ID --by NAME --reason "..."  # HUMAN ONLY (Usama); never run by Claude
 uv run tradeagent prob calibrate --latest  # p_win/EV calibration of latest train runs (--run RUN_ID for one)
 ```

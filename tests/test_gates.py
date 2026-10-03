@@ -187,3 +187,14 @@ def test_only_the_gate_code_opens_oos() -> None:
         if re.search(r"allow_oos\s*=\s*True", p.read_text(encoding="utf-8"))
     ]
     assert users == ["registry/gates.py"]
+
+
+def test_gate_cli_lists_commands() -> None:
+    from typer.testing import CliRunner
+
+    from tradeagent.cli import app
+
+    out = CliRunner().invoke(app, ["gate", "--help"])
+    assert out.exit_code == 0
+    for command in ("register", "status", "show", "check", "approve", "retire"):
+        assert command in out.output

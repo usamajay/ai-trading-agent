@@ -42,3 +42,10 @@ Sources: SPEC §7.2–§7.4, §8.1; CLAUDE.md safety rules 5–6.
 
 ### 7.6 Tests: known-good synthetic strategy and random baseline
 - Synthetic M5 bars with a planted, time-of-day momentum edge (direction known at entry; no look-ahead), split into train, validation and OOS. The planted strategy must climb `research → oos_passed → paper` and stop there (human gates refuse it). The random baseline must fail at the first gate. A second OOS touch is refused, and so are runs with flag-mode account limits.
+
+## Status (2026-10-04): framework built
+- 7.1–7.6 done, with the `tradeagent gate ...` commands. Tests use a synthetic market: after 02:00, 08:00 and 14:00 UTC the price drifts for 3 hours in the direction of the last closed hour (planted edge; train PF ≈ 2.4).
+- The planted strategy passes every gate up to `paper`: OOS PF 2.73 on 65 trades, baseline p 0.048 (it beat all 20 random seeds), walk-forward 8 of 9 windows positive, Monte Carlo 95th-percentile drawdown 5.47% against a 5.84% limit, DSR 1.00. It stops at `paper`; the human steps refuse without a name and a reason.
+- The random baseline fails the first gate (train PF 0.76) and cannot retry. A second OOS touch is refused without an override reason. Flag-mode runs fail the enforced-limits check. A test checks that `allow_oos=True` appears only in `registry/gates.py`.
+- **No real strategy has been registered, and no real out-of-sample data was read.**
+- Paper → approved evidence (≥ 4 weeks, ≥ 50 trades, inside the OOS 90% band) is checked by a human for now; Phase 8 adds the numbers.

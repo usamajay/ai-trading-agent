@@ -4,6 +4,7 @@ from typing import Annotated
 
 import typer
 
+from tradeagent.registry.cli import gate_app
 from tradeagent.research.cli import research_app
 
 app = typer.Typer(help="AI Trading Agent (paper mode by default).", no_args_is_help=True)
@@ -22,6 +23,7 @@ app.add_typer(news_app, name="news")
 prob_app = typer.Typer(help="Probability / EV engine (SPEC §5).", no_args_is_help=True)
 app.add_typer(prob_app, name="prob")
 app.add_typer(research_app, name="research")
+app.add_typer(gate_app, name="gate")
 
 
 @app.callback()
