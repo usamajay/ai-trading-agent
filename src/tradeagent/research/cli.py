@@ -285,3 +285,94 @@ def scan_cmd(
             )
     finally:
         conn.close()
+
+
+@research_app.command("propose")
+def propose_cmd(
+    live: Annotated[
+        bool,
+        typer.Option("--live", help="Send ONE call to the Claude API (default: dry run only)"),
+    ] = False,
+    show_prompt: Annotated[
+        bool, typer.Option("--show-prompt/--no-prompt", help="Print the full prompt")
+    ] = True,
+) -> None:
+    """Ask Claude for up to 5 new hypotheses (stored as `llm`, status proposed).
+    Dry run by default: prints the prompt and its worst-case cost, sends nothing."""
+    from tradeagent.research.hypothesis import (
+        LlmError,
+        anthropic_client,
+        dry_run,
+        propose,
+    )
+
+    cfg, conn = _db()
+    llm = cfg.settings.llm
+    try:
+        prompt, budget = dry_run(conn, cfg)
+        if show_prompt and not live:
+            typer.echo("=== system ===")
+            typer.echo(prompt.system)
+            typer.echo("=== user ===")
+            typer.echo(prompt.user)
+            typer.echo("=== end of prompt ===")
+        typer.echo(
+            f"model {llm.model}, effort {llm.effort}; prompt ~{budget.input_tokens} tokens "
+            f"(estimate), output cap {llm.max_output_tokens} tokens"
+        )
+        typer.echo(
+            f"worst case ${budget.worst_case_usd:.3f} (cap ${llm.max_usd_per_run:.2f}/run); "
+            f"spent this month ${budget.month_spent_usd:.3f} (cap ${llm.max_usd_per_month:.2f})"
+        )
+        if not live:
+            verdict = "within caps" if budget.allowed else f"would be refused: {budget.refusal}"
+            typer.echo(f"DRY RUN: nothing sent ({verdict}). Add --live to send one call.")
+            return
+        try:
+            result = propose(conn, cfg, anthropic_client())
+        except LlmError as e:
+            typer.echo(f"Refused or failed: {e}", err=True)
+            raise typer.Exit(code=1) from e
+        typer.echo(f"{result.call_id}: cost ${result.cost_usd:.4f}")
+        for hid in result.stored:
+            typer.echo(f"  {hid} added (proposed)")
+        for hid in result.duplicates:
+            typer.echo(f"  {hid} already known (not added again)")
+        if not result.proposals:
+            typer.echo("  The model proposed no hypotheses.")
+        typer.echo(
+            "Read them with `tradeagent research show <ID>`; register only the ones you want."
+        )
+    finally:
+        conn.close()
+
+
+@research_app.command("show")
+def show_cmd(
+    hypothesis: Annotated[str, typer.Argument(help="Hypothesis id, e.g. H5 or L1a2b3c")],
+) -> None:
+    """One hypothesis in full (LLM proposals: rationale, params, how to falsify)."""
+    _, conn = _db()
+    try:
+        row = conn.execute(
+            "SELECT hypothesis_id, source, status, text, rationale, created_at FROM hypotheses "
+            "WHERE hypothesis_id = ?",
+            (hypothesis,),
+        ).fetchone()
+        if row is None:
+            typer.echo(f"No hypothesis {hypothesis}", err=True)
+            raise typer.Exit(code=1)
+        hid, source, status, text, rationale, created = row
+        typer.echo(f"{hid} [{source}, {status}] created {created}")
+        typer.echo(text)
+        try:
+            details = json.loads(rationale or "")
+        except json.JSONDecodeError:
+            details = None
+        if isinstance(details, dict):
+            for key, value in details.items():
+                typer.echo(f"- {key}: {value}")
+        elif rationale:
+            typer.echo(f"- rationale: {rationale}")
+    finally:
+        conn.close()

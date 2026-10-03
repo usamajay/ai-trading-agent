@@ -90,6 +90,20 @@ class BacktestSettings(_Strict):
         return int(hours) * 60 + int(minutes)
 
 
+class LlmSettings(_Strict):
+    """Claude API hypothesis loop (Phase 6.7): model and hard spend caps."""
+
+    model: str = Field(min_length=1)
+    effort: Literal["low", "medium", "high", "xhigh", "max"]
+    max_input_tokens: int = Field(ge=1000, le=200_000)  # refuse a larger prompt
+    max_output_tokens: int = Field(ge=1000, le=64_000)  # API max_tokens (thinking + answer)
+    input_usd_per_mtok: float = Field(gt=0)  # list price, used for the worst-case check
+    output_usd_per_mtok: float = Field(gt=0)
+    max_usd_per_run: float = Field(gt=0, le=5)  # worst case of one call must fit
+    max_usd_per_month: float = Field(gt=0, le=50)  # recorded spend (UTC month) + worst case
+    max_hypotheses: int = Field(ge=1, le=5)  # SPEC §8: at most 5 per round
+
+
 class Settings(_Strict):
     mode: Mode
     timezone_display: str
@@ -101,6 +115,7 @@ class Settings(_Strict):
     entry_rules: EntryRules
     data_splits: DataSplits
     backtest: BacktestSettings
+    llm: LlmSettings
 
 
 class RiskLimits(_Strict):

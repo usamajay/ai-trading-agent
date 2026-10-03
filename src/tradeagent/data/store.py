@@ -303,6 +303,24 @@ CREATE TABLE IF NOT EXISTS risk_state (
 -- (that table is for paper/demo/live). run_number = how many runs this strategy
 -- (by name, any version/params) has had on this split, counting this one: the
 -- number of variants tried, for the multiple-testing rule (SPEC §7.4).
+CREATE TABLE IF NOT EXISTS llm_calls (
+    call_id TEXT PRIMARY KEY,
+    purpose TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt_sha256 TEXT NOT NULL,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    cost_usd REAL NOT NULL,
+    worst_case_usd REAL NOT NULL,
+    stop_reason TEXT,
+    request_id TEXT,
+    outcome TEXT NOT NULL,
+    response_text TEXT,
+    git_commit TEXT NOT NULL,
+    config_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS backtest_runs (
     run_id TEXT PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -347,6 +365,7 @@ TABLES = (
     "risk_events",
     "backtest_runs",
     "risk_state",
+    "llm_calls",
 )
 
 

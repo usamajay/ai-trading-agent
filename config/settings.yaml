@@ -31,3 +31,13 @@ backtest:                        # backtest engine (docs/PHASE_2_TASKS.md)
   commission_per_lot_usd: 0.0    # round turn; Exness Standard has no commission
   starting_balance: 10000        # USD, fixed for every backtest (Usama, 2026-09-30)
   cost_stress_multiple: 1.5      # stress re-run: spread (and so slippage) x 1.5 (SPEC §7.4)
+llm:                             # Claude API hypothesis loop (Phase 6.7); key in .env
+  model: claude-opus-5-5
+  effort: high                   # thinking depth; counted inside max_output_tokens
+  max_input_tokens: 40000        # prompt larger than this is refused
+  max_output_tokens: 16000       # hard per-call output cap (thinking + JSON)
+  input_usd_per_mtok: 4.00       # list price per million tokens (check when the model changes)
+  output_usd_per_mtok: 20.00
+  max_usd_per_run: 0.50          # worst case of one call must fit, else refused before sending
+  max_usd_per_month: 5.00        # Usama's ~$5/month; recorded spend this UTC month + worst case
+  max_hypotheses: 5              # SPEC §8
