@@ -17,3 +17,5 @@ mlruns/
 .vscode/
 KILL
 .coverage
+# external EA source (local only; hash recorded in docs/external/goldsr/GOLDSR_RULES.md)
+docs/external/goldsr/*.mq5

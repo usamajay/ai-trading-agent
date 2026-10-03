@@ -68,7 +68,7 @@ Standard = ≥ 100 trades, expectancy > 0 R after costs, 95% CI lower bound > 0,
 - Look-ahead truncation test: PASS on real gold data (20 cuts). Results reproduce exactly on re-run.
 - **Caveat (standing rule):** gold rose +77% over train, and 80% of GoldSR's trades were longs; the comparison is against random trades with the same mix. Any MT5 Strategy Tester results seen earlier had no news filter and used 1% risk.
 
-**Proposed conclusion (for Usama): H5 falsified on train** for the EA's default settings; neither variant goes to validation.
+**Conclusion (Usama, 2026-10-03): H5 falsified** (both variants) for the EA's default settings; neither variant goes to validation. Why it cannot work: the breakeven move at TP1 (1R) caps winners at about +1R (most TP1 trades end at the TP1 lock, only about one in four reaches TP3), while 56% of trades lose the full 1R at the first stop, so expectancy cannot beat costs.
 
 ## 6.6 Statistical scans (train, 2026-10-01)
 
@@ -94,7 +94,7 @@ The two gold 02:00 rows share most of their trades (the filtered run is a subset
 | H2 swap asymmetry | **supported (cost only)** | measured swap cost; strategy tests withdrawn (drift) |
 | H3 oil too costly | **supported** | oil costs 2–3× gold at every timeframe; no oil strategy near the 95th percentile |
 | H4 regime filters | **falsified** (4 strategies, labeller `research-1`) | 0/8 pass; no improvement beyond noise |
-| H5 GoldSR EA | proposed: falsified (E0021/E0022 0/2, −0.17 R, 0th percentile) | see H5 results |
+| H5 GoldSR EA | **falsified** (both variants) | E0021/E0022 0/2, −0.17 R, 0th percentile; breakeven at 1R caps winners at ~+1R while 56% lose 1R |
 
 Strict multiple-testing total: **18 experiment runs** (E0001–E0008, E0013–E0022); E0009–E0012 withdrawn, not counted.
 
